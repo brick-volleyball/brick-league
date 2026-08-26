@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>BRICK リーグ戦集計</title>
+<!-- ============================================================
+     BRICK リーグ戦集計ツール
+     最終更新日時: 2026-08-26 22:21 JST
+     ------------------------------------------------------------
+     リーグ戦(総当たり戦)の結果を入力すると、勝敗・勝ち点・得失セット差・
+     得失点差・順位がリアルタイムに集計されるツール。
+     BRICK動画クリッパー/BRICKポジション配置と同様、1ファイルのHTML
+     (index.html)として実装。サーバー・ビルド環境なしで動作する。
+     配色・フォント・モーダル等のUI部品は他のBRICKツールと揃えている。
+
+     2026-08-26: 初版。
+     ============================================================ -->
+<style>
+  :root{
+    --navy:#182338;
+    --turquoise:#4FC3D9;
+    --bg:#0f1626;
+    --panel:#1c2740;
+    --panel2:#233052;
+    --text:#eef2f8;
+    --sub:#9aa7bf;
+    --border:#33415f;
+    --danger:#e0556f;
+    --ok:#4fc3d9;
+    --gold:#ffc857;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .app{
+    max-width:560px;
+    margin:0 auto;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    background:var(--bg);
+  }
+  header.topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 14px;
+    background:var(--navy);
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+  header.topbar h1{
+    font-size:15px;
+    margin:0;
+    font-weight:700;
+    letter-spacing:.02em;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  header.topbar h1 .dot{
+    width:8px;height:8px;border-radius:50%;background:var(--turquoise);
+  }
+  .iconbtn{
+    background:var(--panel2);
+    border:1px solid var(--border);
+    color:var(--text);
+    width:38px;height:38px;
+    border-radius:10px;
+    font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    flex:none;
+  }
+  .iconbtn:active{transform:scale(.94);}
+  main{
+    flex:1;
+    padding:12px 12px 40px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  section.panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:10px 12px;
+  }
+  section.panel h2{
+    font-size:12px;
+    color:var(--sub);
+    margin:0 0 8px;
+    font-weight:600;
+    letter-spacing:.03em;
+  }
+  .hint{font-size:11px;color:var(--sub);line-height:1.5;margin-top:8px;}
+  .empty-hint{
+    text-align:center;
+    color:var(--sub);
+    font-size:13px;
+    padding:24px 10px;
+    line-height:1.7;
+  }
+  .empty-hint button{
+    margin-top:10px;
+  }
+
+  /* ---- primary button (used for empty-state CTA) ---- */
+  .primary-btn{
+    background:var(--turquoise);
+    color:#0f1626;
+    border:none;
+    font-weight:700;
+    font-size:13px;
+    padding:10px 16px;
+    border-radius:9px;
+    cursor:pointer;
+  }
+  .primary-btn:active{transform:scale(.97);}
+
+  /* ---- 組み合わせ表(マトリクス) ---- */
+  .matrix-scroll{
+    overflow:auto;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:var(--bg);
+    max-height:62vh;
+  }
+  table.matrix{
+    border-collapse:separate;
+    border-spacing:0;
+    table-layout:fixed;
+  }
+  table.matrix th, table.matrix td{
+    border-right:1px solid var(--border);
+    border-bottom:1px solid var(--border);
+    padding:0;
+    text-align:center;
+  }
+  table.matrix .corner-cell{
+    position:sticky;
+    top:0;left:0;
+    z-index:5;
+    background:var(--navy);
+    width:74px;min-width:74px;max-width:74px;
+    height:38px;
+  }
+  table.matrix th.col-head{
+    position:sticky;
+    top:0;
+    z-index:3;
+    background:var(--navy);
+    width:34px;min-width:34px;max-width:34px;
+    height:38px;
+    vertical-align:middle;
+    padding:4px 2px;
+  }
+  table.matrix th.col-head .num-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:24px;height:24px;
+    border-radius:50%;
+    background:var(--panel2);
+    color:var(--turquoise);
+    font-size:11px;
+    font-weight:800;
+    margin:0 auto;
+  }
+  table.matrix th.row-head{
+    position:sticky;
+    left:0;
+    z-index:2;
+    background:var(--navy);
+    width:74px;min-width:74px;max-width:74px;
+    font-size:11.5px;
+    font-weight:600;
+    text-align:left;
+    padding:6px 8px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  table.matrix td.cell{
+    width:34px;min-width:34px;max-width:34px;
+    height:38px;
+    font-size:12px;
+    font-weight:700;
+    cursor:pointer;
+    color:var(--turquoise);
+    background:var(--panel);
+  }
+  table.matrix td.cell:active{background:var(--panel2);}
+  table.matrix td.cell.empty{color:var(--sub);font-weight:400;}
+  table.matrix td.cell.diag{
+    background:repeating-linear-gradient(45deg, var(--navy), var(--navy) 4px, #131b2c 4px, #131b2c 8px);
+    cursor:default;
+  }
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    margin-bottom:8px;
+  }
+  .legend .chip{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    background:var(--panel2);
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:3px 9px 3px 6px;
+    font-size:11px;
+    color:var(--sub);
+  }
+  .legend .chip b{
+    color:var(--turquoise);
+    font-size:10.5px;
+  }
+
+  /* ---- 順位表 ---- */
+  .standings-scroll{overflow-x:auto;}
+  table.standings{
+    border-collapse:collapse;
+    width:100%;
+    font-size:12px;
+  }
+  table.standings th, table.standings td{
+    padding:7px 8px;
+    text-align:center;
+    white-space:nowrap;
+    border-bottom:1px solid var(--border);
+  }
+  table.standings th{
+    color:var(--sub);
+    font-weight:600;
+    font-size:11px;
+    background:var(--panel2);
+  }
+  table.standings td.team-name{
+    text-align:left;
+    font-weight:700;
+    max-width:120px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  table.standings td.rank-cell{
+    font-weight:800;
+    color:var(--turquoise);
+  }
+  table.standings tr.rank1 td.rank-cell{color:var(--gold);}
+  table.standings td.pts-cell{font-weight:800;color:var(--turquoise);}
+
+  /* ---- モーダル(共通) ---- */
+  .modal-overlay{
+    position:fixed;inset:0;
+    background:rgba(5,8,16,.72);
+    z-index:100;
+    display:none;
+    align-items:flex-end;
+    justify-content:center;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    background:var(--bg);
+    width:100%;
+    max-width:560px;
+    height:85vh;
+    max-height:85vh;
+    border-radius:16px 16px 0 0;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    border:1px solid var(--border);
+    border-bottom:none;
+  }
+  .modal.auto-h{height:auto;max-height:85vh;}
+  .modal-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 14px;
+    background:var(--navy);
+    position:sticky;top:0;
+    gap:8px;
+  }
+  .modal-header h2{font-size:15px;margin:0;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .modal-body{
+    padding:12px 14px 24px;
+    overflow-y:auto;
+    flex:1;
+    min-height:0;
+  }
+  .tabs{
+    display:flex;
+    gap:6px;
+    padding:10px 14px 0;
+    background:var(--navy);
+    overflow-x:auto;
+  }
+  .tab{
+    background:transparent;
+    border:none;
+    color:var(--sub);
+    font-size:12.5px;
+    font-weight:700;
+    padding:8px 10px;
+    border-bottom:2px solid transparent;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .tab.active{color:var(--turquoise);border-bottom-color:var(--turquoise);}
+  .tab-pane{display:none;}
+  .tab-pane.active{display:block;}
+
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;
+    font-size:12px;
+    color:var(--sub);
+    margin-bottom:6px;
+    font-weight:600;
+  }
+  .field input[type=text],
+  .field input[type=number]{
+    width:100%;
+    background:var(--panel2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:10px 10px;
+    border-radius:8px;
+    font-size:14px;
+  }
+  .seg{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .seg button{
+    flex:1;
+    min-width:48px;
+    background:var(--panel2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:9px 8px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .seg button.active{background:var(--turquoise);color:#0f1626;border-color:var(--turquoise);font-weight:700;}
+  .points-grid{display:flex;gap:8px;}
+  .points-grid .field{flex:1;margin-bottom:0;}
+  .checkbox-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text);margin-bottom:12px;}
+  .checkbox-row input{width:17px;height:17px;flex:none;}
+  .checkbox-row .sub{color:var(--sub);font-size:11px;display:block;margin-top:2px;}
+  .checkbox-row .label-wrap{display:flex;flex-direction:column;}
+  hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0;}
+
+  .team-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:var(--panel2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:8px 10px;
+    margin-bottom:8px;
+  }
+  .team-row .team-num{
+    flex:none;
+    width:24px;height:24px;
+    border-radius:50%;
+    background:var(--navy);
+    color:var(--turquoise);
+    font-size:11px;
+    font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .team-row input[type=text]{
+    flex:1;min-width:0;
+    background:var(--bg);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:8px 9px;
+    border-radius:7px;
+    font-size:13px;
+  }
+  .smallbtn{
+    background:var(--panel);
+    border:1px solid var(--border);
+    color:var(--text);
+    font-size:11px;
+    padding:6px 9px;
+    border-radius:7px;
+    cursor:pointer;
+    flex:none;
+  }
+  .smallbtn.danger{color:var(--danger);border-color:var(--danger);}
+  .addform{
+    background:var(--panel2);
+    border:1px dashed var(--border);
+    border-radius:10px;
+    padding:12px;
+    margin-top:4px;
+    display:flex;
+    gap:8px;
+  }
+  .addform input[type=text]{
+    flex:1;min-width:0;
+    background:var(--bg);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:9px 10px;
+    border-radius:8px;
+    font-size:13px;
+  }
+
+  /* ---- 試合結果入力モーダル ---- */
+  .set-row{
+    display:grid;
+    grid-template-columns:56px 1fr 20px 1fr;
+    align-items:center;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .set-row .set-label{font-size:11.5px;color:var(--sub);font-weight:700;}
+  .set-row .vs{text-align:center;color:var(--sub);font-size:11px;}
+  .set-row input[type=number]{
+    width:100%;
+    background:var(--panel2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:9px 4px;
+    border-radius:8px;
+    font-size:15px;
+    text-align:center;
+  }
+  .set-team-labels{
+    display:grid;
+    grid-template-columns:56px 1fr 20px 1fr;
+    gap:8px;
+    margin-bottom:6px;
+  }
+  .set-team-labels .stl{
+    font-size:11px;
+    color:var(--turquoise);
+    font-weight:700;
+    text-align:center;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .match-actions{
+    display:flex;
+    gap:8px;
+    margin-top:16px;
+  }
+  .match-actions button{flex:1;}
+  .btn-full{
+    background:var(--turquoise);
+    color:#0f1626;
+    border:none;
+    font-weight:700;
+    font-size:14px;
+    padding:11px;
+    border-radius:9px;
+    cursor:pointer;
+  }
+  .btn-full.secondary{
+    background:var(--panel2);
+    color:var(--text);
+    border:1px solid var(--border);
+  }
+  .btn-full.danger{
+    background:transparent;
+    color:var(--danger);
+    border:1px solid var(--danger);
+  }
+
+  .toast{
+    position:fixed;
+    bottom:24px;
+    left:50%;
+    transform:translateX(-50%);
+    background:#0f1626;
+    border:1px solid var(--turquoise);
+    color:#fff;
+    padding:10px 16px;
+    border-radius:10px;
+    font-size:13px;
+    z-index:200;
+    max-width:88vw;
+    text-align:center;
+    box-shadow:0 8px 20px rgba(0,0,0,.4);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .2s ease;
+  }
+  .toast.show{opacity:1;}
+
+  .version-note{
+    margin-top:6px;
+    font-size:10.5px;
+    color:rgba(255,255,255,.28);
+    text-align:center;
+    padding-bottom:14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <h1><span class="dot"></span>BRICK リーグ戦集計</h1>
+    <button class="iconbtn" id="settingsBtn" title="設定" aria-label="設定">⚙️</button>
+  </header>
+
+  <main>
+    <section class="panel" id="matrixPanel">
+      <h2>組み合わせ表</h2>
+      <div id="matrixArea"></div>
+    </section>
+
+    <section class="panel" id="standingsPanel">
+      <h2>順位表</h2>
+      <div id="standingsArea"></div>
+    </section>
+  </main>
+
+  <p class="version-note" id="versionNote"></p>
+</div>
+
+<!-- ===================== 設定モーダル ===================== -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>設定</h2>
+      <button class="iconbtn" id="closeSettingsBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="teams">チーム</button>
+      <button class="tab" data-tab="format">大会設定</button>
+      <button class="tab" data-tab="display">表示設定</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="tab-pane active" id="tab-teams">
+        <div id="teamListArea"></div>
+        <div class="addform" id="addTeamForm">
+          <input type="text" id="newTeamName" placeholder="チーム名を入力" maxlength="20">
+          <button class="smallbtn" id="addTeamBtn">＋ 追加</button>
+        </div>
+        <p class="hint" id="teamCountHint"></p>
+      </div>
+
+      <div class="tab-pane" id="tab-format">
+        <div class="field">
+          <label>1試合のセット数</label>
+          <div class="seg" id="maxSetsSeg">
+            <button data-v="1">1</button>
+            <button data-v="2">2</button>
+            <button data-v="3">3</button>
+            <button data-v="4">4</button>
+            <button data-v="5">5</button>
+          </div>
+          <p class="hint">実際に行ったセット数だけ入力すればOKです(全セット入力する必要はありません)。試合結果入力画面に表示されるセット欄の数が変わります。</p>
+        </div>
+        <hr class="sep">
+        <div class="field">
+          <label>勝ち点の設定</label>
+          <div class="points-grid">
+            <div class="field">
+              <label>勝ち</label>
+              <input type="number" id="ptWin" step="1">
+            </div>
+            <div class="field">
+              <label>引き分け</label>
+              <input type="number" id="ptDraw" step="1">
+            </div>
+            <div class="field">
+              <label>負け</label>
+              <input type="number" id="ptLoss" step="1">
+            </div>
+          </div>
+          <p class="hint">1試合の勝敗数から自動集計する勝ち点の配点です。順位はまず勝ち点、次に得失セット差、次に得失点差の順で比較します。</p>
+        </div>
+      </div>
+
+      <div class="tab-pane" id="tab-display">
+        <p class="hint" style="margin-top:0;margin-bottom:12px;">順位表に表示する項目を選べます(チーム名・試合数は常に表示されます)。</p>
+        <label class="checkbox-row">
+          <input type="checkbox" id="dispWinloss">
+          <span class="label-wrap">勝敗数<span class="sub">勝・分・敗の内訳</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="dispPoints">
+          <span class="label-wrap">勝ち点</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="dispSetDiff">
+          <span class="label-wrap">得失セット差<span class="sub">得セット・失セット・セット差</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="dispPointDiff">
+          <span class="label-wrap">得失点差<span class="sub">得点・失点・得点差</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="dispRank">
+          <span class="label-wrap">順位<span class="sub">順位の番号列(オフでも並び順は順位のまま)</span></span>
+        </label>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 試合結果入力モーダル ===================== -->
+<div class="modal-overlay" id="matchModal">
+  <div class="modal auto-h">
+    <div class="modal-header">
+      <h2 id="matchModalTitle">対戦カード</h2>
+      <button class="iconbtn" id="closeMatchBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="modal-body" id="matchModalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ========================= 定数 ========================= */
+const APP_VERSION = "v2026-08-26 22:21";
+const LS_KEY = "brickleague_v1";
+const MAX_TEAMS = 12;
+const MIN_TEAMS = 3;
+
+/* ========================= 状態 ========================= */
+let state = {
+  teams: [],       // [{id,name}]
+  matches: {},      // key(=sortedId1__sortedId2) -> {sets:[{a,b}|null, ...]}
+  settings: {
+    maxSets: 3,
+    points: { win: 2, draw: 1, loss: 0 },
+    display: { winloss: true, points: true, setDiff: true, pointDiff: true, rank: true }
+  },
+  nextId: 1
+};
+
+/* ========================= ユーティリティ ========================= */
+function $(id){ return document.getElementById(id); }
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._tm);
+  toast._tm = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function newTeamId(){
+  const id = 'T' + state.nextId;
+  state.nextId += 1;
+  return id;
+}
+function pairKey(id1, id2){
+  return [id1, id2].sort().join('__');
+}
+function findTeam(id){
+  return state.teams.find(t => t.id === id) || null;
+}
+
+/* ========================= 保存/読み込み ========================= */
+function save(){
+  try{
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+  }catch(e){ console.error('save failed', e); }
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return;
+    const data = JSON.parse(raw);
+    if(Array.isArray(data.teams)) state.teams = data.teams;
+    if(data.matches && typeof data.matches === 'object') state.matches = data.matches;
+    if(data.settings){
+      state.settings.maxSets = data.settings.maxSets || state.settings.maxSets;
+      if(data.settings.points) state.settings.points = Object.assign({}, state.settings.points, data.settings.points);
+      if(data.settings.display) state.settings.display = Object.assign({}, state.settings.display, data.settings.display);
+    }
+    if(typeof data.nextId === 'number') state.nextId = data.nextId;
+  }catch(e){
+    console.error('load failed', e);
+  }
+}
+
+/* ========================= 試合結果の計算 ========================= */
+// sets: [{a,b}|null, ...] (a,bはteamA/teamB視点の得点)
+function computeMatch(sets){
+  let aSets = 0, bSets = 0, aPts = 0, bPts = 0, played = 0, partial = 0;
+  (sets || []).forEach(s => {
+    if(!s) return;
+    const hasA = s.a !== null && s.a !== undefined && s.a !== '';
+    const hasB = s.b !== null && s.b !== undefined && s.b !== '';
+    if(!hasA && !hasB) return;
+    if(hasA !== hasB){ partial++; return; } // 片方しか入力されていないセットは未確定として無視
+    const a = Number(s.a), b = Number(s.b);
+    if(!Number.isFinite(a) || !Number.isFinite(b)) return;
+    played++;
+    aPts += a; bPts += b;
+    if(a > b) aSets++; else if(b > a) bSets++;
+  });
+  return { aSets, bSets, aPts, bPts, played, partial };
+}
+
+function computeStandings(){
+  const stats = {};
+  state.teams.forEach(t => {
+    stats[t.id] = { id:t.id, name:t.name, played:0, win:0, draw:0, loss:0,
+      setsFor:0, setsAgainst:0, ptsFor:0, ptsAgainst:0 };
+  });
+  Object.keys(state.matches).forEach(key => {
+    const parts = key.split('__');
+    const idA = parts[0], idB = parts[1];
+    if(!stats[idA] || !stats[idB]) return; // 削除済みチームの残骸データは無視
+    const m = computeMatch(state.matches[key].sets);
+    if(m.played === 0) return;
+    stats[idA].played++; stats[idB].played++;
+    stats[idA].setsFor += m.aSets; stats[idA].setsAgainst += m.bSets;
+    stats[idB].setsFor += m.bSets; stats[idB].setsAgainst += m.aSets;
+    stats[idA].ptsFor += m.aPts; stats[idA].ptsAgainst += m.bPts;
+    stats[idB].ptsFor += m.bPts; stats[idB].ptsAgainst += m.aPts;
+    if(m.aSets > m.bSets){ stats[idA].win++; stats[idB].loss++; }
+    else if(m.bSets > m.aSets){ stats[idB].win++; stats[idA].loss++; }
+    else { stats[idA].draw++; stats[idB].draw++; }
+  });
+  const pts = state.settings.points;
+  const list = Object.values(stats).map(s => {
+    s.leaguePoints = s.win * (pts.win||0) + s.draw * (pts.draw||0) + s.loss * (pts.loss||0);
+    s.setDiff = s.setsFor - s.setsAgainst;
+    s.ptDiff = s.ptsFor - s.ptsAgainst;
+    return s;
+  });
+  list.sort((a,b) =>
+    b.leaguePoints - a.leaguePoints ||
+    b.setDiff - a.setDiff ||
+    b.ptDiff - a.ptDiff ||
+    a.name.localeCompare(b.name, 'ja')
+  );
+  let rank = 0, shown = 0, prevKey = null;
+  list.forEach(s => {
+    shown++;
+    const key = s.leaguePoints + '|' + s.setDiff + '|' + s.ptDiff;
+    if(key !== prevKey){ rank = shown; prevKey = key; }
+    s.rank = rank;
+  });
+  return list;
+}
+
+/* ========================= 描画: 組み合わせ表 ========================= */
+function renderMatrix(){
+  const area = $('matrixArea');
+  const teams = state.teams;
+  if(teams.length < MIN_TEAMS){
+    area.innerHTML =
+      '<div class="empty-hint">組み合わせ表を使うには' + MIN_TEAMS + 'チーム以上の登録が必要です。<br>' +
+      '(現在 ' + teams.length + ' チーム)<br>' +
+      '<button class="primary-btn" id="goAddTeamsBtn">チームを登録する</button></div>';
+    const btn = $('goAddTeamsBtn');
+    if(btn) btn.addEventListener('click', () => openSettings('teams'));
+    return;
+  }
+
+  let html = '<div class="legend">';
+  teams.forEach((t, i) => {
+    html += '<span class="chip"><b>' + (i+1) + '</b>' + esc(t.name) + '</span>';
+  });
+  html += '</div>';
+
+  html += '<div class="matrix-scroll"><table class="matrix"><thead><tr>';
+  html += '<th class="corner-cell"></th>';
+  teams.forEach((t, i) => {
+    html += '<th class="col-head" title="' + esc(t.name) + '"><span class="num-badge">' + (i+1) + '</span></th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  teams.forEach((rowTeam, i) => {
+    html += '<tr>';
+    html += '<th class="row-head" title="' + esc(rowTeam.name) + '">' + (i+1) + ' ' + esc(rowTeam.name) + '</th>';
+    teams.forEach((colTeam, j) => {
+      if(i === j){
+        html += '<td class="cell diag"></td>';
+        return;
+      }
+      const key = pairKey(rowTeam.id, colTeam.id);
+      const rec = state.matches[key];
+      const m = rec ? computeMatch(rec.sets) : { aSets:0, bSets:0, played:0 };
+      const parts = key.split('__');
+      const canonA = parts[0];
+      // rowTeamがcanonicalなteamAかどうかで表示順を決める(常に row-col の順で表示)
+      let rowSets, colSets;
+      if(rowTeam.id === canonA){ rowSets = m.aSets; colSets = m.bSets; }
+      else { rowSets = m.bSets; colSets = m.aSets; }
+      if(m.played > 0){
+        html += '<td class="cell" data-row="' + i + '" data-col="' + j + '">' + rowSets + '-' + colSets + '</td>';
+      } else {
+        html += '<td class="cell empty" data-row="' + i + '" data-col="' + j + '">-</td>';
+      }
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '<p class="hint">セルをタップすると、そのマスの行×列の対戦結果を入力できます。</p>';
+
+  area.innerHTML = html;
+  area.querySelectorAll('td.cell:not(.diag)').forEach(td => {
+    td.addEventListener('click', () => {
+      const i = Number(td.dataset.row), j = Number(td.dataset.col);
+      openMatchModal(teams[i], teams[j]);
+    });
+  });
+}
+
+/* ========================= 描画: 順位表 ========================= */
+function renderStandings(){
+  const area = $('standingsArea');
+  const teams = state.teams;
+  if(teams.length === 0){
+    area.innerHTML = '<div class="empty-hint">チームを登録すると順位表が表示されます。</div>';
+    return;
+  }
+  const disp = state.settings.display;
+  const list = computeStandings();
+
+  let cols = [];
+  if(disp.rank) cols.push('rank');
+  cols.push('name');
+  cols.push('played');
+  if(disp.winloss) cols.push('win','draw','loss');
+  if(disp.points) cols.push('points');
+  if(disp.setDiff) cols.push('setsFor','setsAgainst','setDiff');
+  if(disp.pointDiff) cols.push('ptsFor','ptsAgainst','ptDiff');
+
+  const HEAD = {
+    rank:'順位', name:'チーム', played:'試合', win:'勝', draw:'分', loss:'敗',
+    points:'勝点', setsFor:'得S', setsAgainst:'失S', setDiff:'差S',
+    ptsFor:'得点', ptsAgainst:'失点', ptDiff:'差点'
+  };
+
+  let html = '<div class="standings-scroll"><table class="standings"><thead><tr>';
+  cols.forEach(c => { html += '<th>' + HEAD[c] + '</th>'; });
+  html += '</tr></thead><tbody>';
+
+  list.forEach(s => {
+    html += '<tr class="' + (s.rank === 1 ? 'rank1' : '') + '">';
+    cols.forEach(c => {
+      if(c === 'rank') html += '<td class="rank-cell">' + s.rank + '</td>';
+      else if(c === 'name') html += '<td class="team-name" title="' + esc(s.name) + '">' + esc(s.name) + '</td>';
+      else if(c === 'points') html += '<td class="pts-cell">' + s.leaguePoints + '</td>';
+      else if(c === 'setDiff') html += '<td>' + (s.setDiff > 0 ? '+' : '') + s.setDiff + '</td>';
+      else if(c === 'ptDiff') html += '<td>' + (s.ptDiff > 0 ? '+' : '') + s.ptDiff + '</td>';
+      else html += '<td>' + s[c] + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  area.innerHTML = html;
+}
+
+function renderAll(){
+  renderMatrix();
+  renderStandings();
+}
+
+/* ========================= 設定: チーム管理 ========================= */
+function renderTeamList(){
+  const area = $('teamListArea');
+  if(state.teams.length === 0){
+    area.innerHTML = '<p class="hint" style="margin-top:0;">まだチームが登録されていません。</p>';
+  } else {
+    let html = '';
+    state.teams.forEach((t, i) => {
+      html += '<div class="team-row" data-id="' + t.id + '">' +
+        '<div class="team-num">' + (i+1) + '</div>' +
+        '<input type="text" class="team-name-input" value="' + esc(t.name) + '" maxlength="20">' +
+        '<button class="smallbtn danger" data-act="del">削除</button>' +
+        '</div>';
+    });
+    area.innerHTML = html;
+
+    area.querySelectorAll('.team-row').forEach(row => {
+      const id = row.dataset.id;
+      const input = row.querySelector('.team-name-input');
+      input.addEventListener('change', () => {
+        const t = findTeam(id);
+        if(!t) return;
+        const v = input.value.trim();
+        t.name = v || t.name;
+        input.value = t.name;
+        save();
+        renderAll();
+        renderTeamList();
+      });
+      row.querySelector('[data-act="del"]').addEventListener('click', () => {
+        const t = findTeam(id);
+        if(!t) return;
+        if(!confirm(t.name + ' を削除します。このチームが関わる対戦結果も削除されます。よろしいですか？')) return;
+        state.teams = state.teams.filter(x => x.id !== id);
+        Object.keys(state.matches).forEach(key => {
+          if(key.split('__').includes(id)) delete state.matches[key];
+        });
+        save();
+        renderAll();
+        renderTeamList();
+        updateTeamCountHint();
+      });
+    });
+  }
+  updateAddFormState();
+}
+
+function updateTeamCountHint(){
+  const hint = $('teamCountHint');
+  hint.textContent = '登録チーム数: ' + state.teams.length + ' / ' + MAX_TEAMS +
+    (state.teams.length < MIN_TEAMS ? '(組み合わせ表の利用には' + MIN_TEAMS + 'チーム以上必要です)' : '');
+}
+function updateAddFormState(){
+  const form = $('addTeamForm');
+  if(state.teams.length >= MAX_TEAMS){
+    form.style.display = 'none';
+  } else {
+    form.style.display = 'flex';
+  }
+  updateTeamCountHint();
+}
+
+$('addTeamBtn').addEventListener('click', () => {
+  const input = $('newTeamName');
+  const name = input.value.trim();
+  if(!name){ toast('チーム名を入力してください'); return; }
+  if(state.teams.length >= MAX_TEAMS){ toast('登録できるのは最大' + MAX_TEAMS + 'チームまでです'); return; }
+  state.teams.push({ id: newTeamId(), name });
+  input.value = '';
+  save();
+  renderAll();
+  renderTeamList();
+});
+$('newTeamName').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); $('addTeamBtn').click(); }
+});
+
+/* ========================= 設定: 大会設定(セット数・勝ち点) ========================= */
+function renderFormatTab(){
+  $('maxSetsSeg').querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.v) === state.settings.maxSets);
+  });
+  $('ptWin').value = state.settings.points.win;
+  $('ptDraw').value = state.settings.points.draw;
+  $('ptLoss').value = state.settings.points.loss;
+}
+$('maxSetsSeg').querySelectorAll('button').forEach(b => {
+  b.addEventListener('click', () => {
+    state.settings.maxSets = Number(b.dataset.v);
+    save();
+    renderFormatTab();
+  });
+});
+function bindPointsInput(id, key){
+  $(id).addEventListener('input', () => {
+    const v = Number($(id).value);
+    state.settings.points[key] = Number.isFinite(v) ? v : 0;
+    save();
+    renderStandings();
+  });
+}
+bindPointsInput('ptWin', 'win');
+bindPointsInput('ptDraw', 'draw');
+bindPointsInput('ptLoss', 'loss');
+
+/* ========================= 設定: 表示設定 ========================= */
+function renderDisplayTab(){
+  $('dispWinloss').checked = !!state.settings.display.winloss;
+  $('dispPoints').checked = !!state.settings.display.points;
+  $('dispSetDiff').checked = !!state.settings.display.setDiff;
+  $('dispPointDiff').checked = !!state.settings.display.pointDiff;
+  $('dispRank').checked = !!state.settings.display.rank;
+}
+function bindDisplayToggle(id, key){
+  $(id).addEventListener('change', () => {
+    state.settings.display[key] = $(id).checked;
+    save();
+    renderStandings();
+  });
+}
+bindDisplayToggle('dispWinloss', 'winloss');
+bindDisplayToggle('dispPoints', 'points');
+bindDisplayToggle('dispSetDiff', 'setDiff');
+bindDisplayToggle('dispPointDiff', 'pointDiff');
+bindDisplayToggle('dispRank', 'rank');
+
+/* ========================= 設定モーダルの開閉・タブ切替 ========================= */
+function openSettings(tabName){
+  renderTeamList();
+  renderFormatTab();
+  renderDisplayTab();
+  if(tabName) switchSettingsTab(tabName);
+  $('settingsModal').classList.add('open');
+}
+function switchSettingsTab(name){
+  document.querySelectorAll('#settingsModal .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('#settingsModal .tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+}
+$('settingsBtn').addEventListener('click', () => openSettings());
+$('closeSettingsBtn').addEventListener('click', () => $('settingsModal').classList.remove('open'));
+$('settingsModal').addEventListener('click', (e) => { if(e.target.id === 'settingsModal') $('settingsModal').classList.remove('open'); });
+document.querySelectorAll('#settingsModal .tab').forEach(t => {
+  t.addEventListener('click', () => switchSettingsTab(t.dataset.tab));
+});
+
+/* ========================= 試合結果入力モーダル ========================= */
+let currentMatchCtx = null; // {rowTeam, colTeam, canonA, canonB, key}
+
+function openMatchModal(rowTeam, colTeam){
+  const key = pairKey(rowTeam.id, colTeam.id);
+  const canonA = key.split('__')[0];
+  const rec = state.matches[key];
+  const storedSets = (rec && rec.sets) ? rec.sets : [];
+
+  // rowTeam視点(左=rowTeam, 右=colTeam)のセット配列を作る
+  const n = Math.max(state.settings.maxSets, storedSets.length);
+  const rowSets = [];
+  for(let idx = 0; idx < n; idx++){
+    const s = storedSets[idx];
+    if(!s){ rowSets.push({ a:'', b:'' }); continue; }
+    if(rowTeam.id === canonA) rowSets.push({ a: s.a, b: s.b });
+    else rowSets.push({ a: s.b, b: s.a });
+  }
+
+  currentMatchCtx = { rowTeam, colTeam, canonA, key };
+
+  $('matchModalTitle').textContent = rowTeam.name + ' vs ' + colTeam.name;
+
+  let html = '<div class="set-team-labels">' +
+    '<div></div><div class="stl" title="' + esc(rowTeam.name) + '">' + esc(rowTeam.name) + '</div>' +
+    '<div></div><div class="stl" title="' + esc(colTeam.name) + '">' + esc(colTeam.name) + '</div>' +
+    '</div>';
+
+  rowSets.forEach((s, idx) => {
+    const overLimit = idx >= state.settings.maxSets;
+    html += '<div class="set-row" data-idx="' + idx + '">' +
+      '<div class="set-label">第' + (idx+1) + 'セット' + (overLimit ? '※' : '') + '</div>' +
+      '<input type="number" inputmode="numeric" min="0" step="1" class="set-a" value="' + esc(s.a) + '">' +
+      '<div class="vs">-</div>' +
+      '<input type="number" inputmode="numeric" min="0" step="1" class="set-b" value="' + esc(s.b) + '">' +
+      '</div>';
+  });
+  const hasOverLimit = rowSets.length > state.settings.maxSets;
+  if(hasOverLimit){
+    html += '<p class="hint">※ 現在の設定(' + state.settings.maxSets + 'セットマッチ)を超える入力済みのセットです。設定を変更するまで対象外にする場合は空欄にしてください。</p>';
+  }
+
+  html += '<div class="match-actions">' +
+    '<button class="btn-full secondary" id="matchClearBtn">結果をクリア</button>' +
+    '<button class="btn-full" id="matchSaveBtn">保存</button>' +
+    '</div>';
+
+  $('matchModalBody').innerHTML = html;
+  $('matchModal').classList.add('open');
+
+  $('matchSaveBtn').addEventListener('click', saveMatchModal);
+  $('matchClearBtn').addEventListener('click', () => {
+    if(!confirm('この対戦結果をすべてクリアします。よろしいですか？')) return;
+    delete state.matches[currentMatchCtx.key];
+    save();
+    renderAll();
+    $('matchModal').classList.remove('open');
+    toast('対戦結果をクリアしました');
+  });
+}
+
+function saveMatchModal(){
+  const ctx = currentMatchCtx;
+  if(!ctx) return;
+  const rows = document.querySelectorAll('#matchModalBody .set-row');
+  const rowSets = [];
+  let partialCount = 0;
+  rows.forEach(row => {
+    const aRaw = row.querySelector('.set-a').value.trim();
+    const bRaw = row.querySelector('.set-b').value.trim();
+    if(aRaw === '' && bRaw === ''){ rowSets.push(null); return; }
+    if(aRaw === '' || bRaw === ''){ partialCount++; rowSets.push({ a: aRaw === '' ? null : Number(aRaw), b: bRaw === '' ? null : Number(bRaw) }); return; }
+    rowSets.push({ a: Number(aRaw), b: Number(bRaw) });
+  });
+
+  // rowTeam視点 -> canonical(teamA/teamB)視点へ変換して保存
+  const canonSets = rowSets.map(s => {
+    if(!s) return null;
+    if(ctx.rowTeam.id === ctx.canonA) return { a: s.a, b: s.b };
+    return { a: s.b, b: s.a };
+  });
+
+  state.matches[ctx.key] = { sets: canonSets };
+  save();
+  renderAll();
+  $('matchModal').classList.remove('open');
+  toast(partialCount > 0 ? '保存しました(片方のみ入力のセットは未確定として扱われます)' : '保存しました');
+}
+
+$('closeMatchBtn').addEventListener('click', () => $('matchModal').classList.remove('open'));
+$('matchModal').addEventListener('click', (e) => { if(e.target.id === 'matchModal') $('matchModal').classList.remove('open'); });
+
+/* ========================= 初期化 ========================= */
+(function init(){
+  load();
+  $('versionNote').textContent = APP_VERSION;
+  renderAll();
+})();
+
+})();
+</script>
+
+</body>
+</html>
