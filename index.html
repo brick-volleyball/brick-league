@@ -6,7 +6,7 @@
 <title>BRICK リーグ戦集計</title>
 <!-- ============================================================
      BRICK リーグ戦集計ツール
-     最終更新日時: 2026-08-27 09:03 JST
+     最終更新日時: 2026-08-27 10:30 JST
      ------------------------------------------------------------
      リーグ戦(総当たり戦)の結果を入力すると、勝敗・勝ち点・得失セット差・
      得失点差・順位がリアルタイムに集計されるツール。
@@ -25,6 +25,20 @@
      あわせて、チームを登録したまま組み合わせ表・順位表からだけ除外できる
      「参加中/除外中」切り替えを追加(削除ではないので対戦結果は消えず、
      再度「参加中」に戻せば元通り表示される)。
+
+     2026-08-27(2回目): 2つの機能を追加。
+     ①データの書き出し・読み込み: 設定の「データ」タブから、今開いている
+     リーグ(チーム・対戦結果・設定)をJSONファイルとして書き出し/読み込み
+     できるようにした。毎回同じチームで開催する場合、次回シーズンの
+     リーグを作ってから読み込めば、チーム名の再登録が不要になる。
+     ②結果の共有リンク: 組み合わせ表の「🔗 共有リンク」ボタンから、
+     その時点の対戦結果(得点ベース)を閲覧専用で見られるURLを発行できる
+     ようにした。サーバーを使わず、データをURL自体に埋め込む方式のため、
+     リンクを開いた側は特別な操作なしにその場で結果を確認できる。ただし
+     スナップショット方式のため、結果を更新したら都度リンクを作り直す
+     必要がある(自動更新はされない)。共有ビューには「自分のアプリに
+     取り込む」ボタンもあり、受け取った側が自分の端末に新しいリーグとして
+     取り込むこともできる。
      ============================================================ -->
 <style>
   :root{
@@ -592,6 +606,43 @@
     text-align:center;
     padding-bottom:14px;
   }
+
+  /* ---- パネル見出し行(見出し+操作ボタン) ---- */
+  .panel-head-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:8px;
+  }
+  .panel-head-row h2{margin:0;}
+
+  /* ---- 共有ビュー用バナー ---- */
+  .share-banner{
+    display:none;
+    background:var(--panel2);
+    border:1px solid var(--turquoise);
+    border-radius:12px;
+    padding:12px;
+  }
+  .share-banner p{margin:0 0 10px;font-size:12.5px;line-height:1.6;color:var(--text);}
+  .share-banner-actions{display:flex;flex-direction:column;gap:8px;}
+  .share-banner-actions .smallbtn{width:100%;text-align:center;padding:9px;font-size:12px;}
+
+  /* ---- ファイル入力(データ書き出し/読み込み) ---- */
+  .field input[type=file]{
+    width:100%;
+    color:var(--sub);
+    font-size:12px;
+    background:var(--panel2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:9px 8px;
+  }
+  .field input[readonly]{
+    color:var(--sub);
+  }
+  .set-row input[type=number]:disabled{opacity:.6;}
 </style>
 </head>
 <body>
@@ -606,8 +657,19 @@
   </header>
 
   <main>
+    <div class="share-banner" id="shareBanner">
+      <p>🔗 共有された結果です(閲覧専用)。「<span id="shareBannerName"></span>」</p>
+      <div class="share-banner-actions">
+        <button class="smallbtn" id="shareImportBtn">＋ 自分のアプリに取り込む(新しいリーグとして追加)</button>
+        <button class="smallbtn" id="shareGoAppLink">自分のデータを見る(このリンクを離れる)</button>
+      </div>
+    </div>
+
     <section class="panel" id="matrixPanel">
-      <h2>組み合わせ表</h2>
+      <div class="panel-head-row">
+        <h2>組み合わせ表</h2>
+        <button class="smallbtn" id="shareLinkBtn">🔗 共有リンク</button>
+      </div>
       <div id="matrixArea"></div>
     </section>
 
@@ -649,6 +711,7 @@
       <button class="tab active" data-tab="teams">チーム</button>
       <button class="tab" data-tab="format">大会設定</button>
       <button class="tab" data-tab="display">表示設定</button>
+      <button class="tab" data-tab="data">データ</button>
     </div>
     <div class="modal-body">
 
@@ -719,6 +782,37 @@
         </label>
       </div>
 
+      <div class="tab-pane" id="tab-data">
+        <p class="hint" style="margin-top:0;">今開いているリーグ(チーム・対戦結果・設定)をファイルに書き出したり、書き出したファイルを読み込んだりできます。毎シーズン同じメンバーで開催する場合などに、チームの再登録の手間を省けます。</p>
+        <button class="btn-full secondary" id="exportDataBtn">⬇ このリーグのデータを書き出す</button>
+        <hr class="sep">
+        <div class="field">
+          <label>ファイルを読み込む</label>
+          <input type="file" id="importDataFile" accept="application/json,.json">
+        </div>
+        <button class="btn-full secondary" id="importDataBtn">⬆ 読み込む</button>
+        <p class="hint">読み込むと、今開いている「<span id="dataTabLeagueName"></span>」の内容が、読み込んだファイルの内容で置き換わります(元に戻せません)。別のリーグとして読み込みたい場合は、先に新しいリーグを作成してから、そのリーグを開いた状態で読み込んでください。</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 共有リンクモーダル ===================== -->
+<div class="modal-overlay" id="shareLinkModal">
+  <div class="modal auto-h">
+    <div class="modal-header">
+      <h2>共有リンク</h2>
+      <button class="iconbtn" id="closeShareLinkBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint" style="margin-top:0;">このリンクを開くと、現在の組み合わせ表・順位表を閲覧専用で見ることができます(相手側はアプリの操作や登録は不要です)。</p>
+      <div class="field">
+        <label>共有URL</label>
+        <input type="text" id="shareLinkOutput" readonly onclick="this.select()">
+      </div>
+      <button class="btn-full" id="copyShareLinkBtn">URLをコピー</button>
+      <p class="hint">※ リンクにはこの時点の結果がそのまま埋め込まれます。あとで結果を更新しても、このリンクの内容は自動的には変わりません。最新の結果を共有したいときは、もう一度このボタンからリンクを作り直してください。</p>
     </div>
   </div>
 </div>
@@ -741,7 +835,7 @@
 "use strict";
 
 /* ========================= 定数 ========================= */
-const APP_VERSION = "v2026-08-27 09:03";
+const APP_VERSION = "v2026-08-27 10:30";
 const LS_KEY = "brickleague_v1";
 const MAX_TEAMS = 12;
 const MIN_TEAMS = 3;
@@ -934,17 +1028,23 @@ function computeStandings(league){
 }
 
 /* ========================= 描画: 組み合わせ表 ========================= */
-function renderMatrix(){
+function renderMatrix(opts){
+  opts = opts || {};
+  const league = opts.league || currentLeague();
+  const readOnly = !!opts.readOnly;
   const area = $('matrixArea');
-  const league = currentLeague();
   const teams = activeTeams(league);
   if(teams.length < MIN_TEAMS){
-    area.innerHTML =
-      '<div class="empty-hint">組み合わせ表を使うには参加中のチームが' + MIN_TEAMS + 'チーム以上必要です。<br>' +
-      '(現在 参加中 ' + teams.length + ' / 登録 ' + league.teams.length + ' チーム)<br>' +
-      '<button class="primary-btn" id="goAddTeamsBtn">チームを登録・編集する</button></div>';
-    const btn = $('goAddTeamsBtn');
-    if(btn) btn.addEventListener('click', () => openSettings('teams'));
+    if(readOnly){
+      area.innerHTML = '<div class="empty-hint">参加中のチームが' + MIN_TEAMS + 'チーム未満のため、組み合わせ表は表示されません。</div>';
+    } else {
+      area.innerHTML =
+        '<div class="empty-hint">組み合わせ表を使うには参加中のチームが' + MIN_TEAMS + 'チーム以上必要です。<br>' +
+        '(現在 参加中 ' + teams.length + ' / 登録 ' + league.teams.length + ' チーム)<br>' +
+        '<button class="primary-btn" id="goAddTeamsBtn">チームを登録・編集する</button></div>';
+      const btn = $('goAddTeamsBtn');
+      if(btn) btn.addEventListener('click', () => openSettings('teams'));
+    }
     return;
   }
 
@@ -987,21 +1087,25 @@ function renderMatrix(){
     html += '</tr>';
   });
   html += '</tbody></table></div>';
-  html += '<p class="hint">セルをタップすると、そのマスの行×列の対戦結果を入力できます。</p>';
+  html += readOnly
+    ? '<p class="hint">セルをタップすると、その対戦のセットごとの得点を確認できます。</p>'
+    : '<p class="hint">セルをタップすると、そのマスの行×列の対戦結果を入力できます。</p>';
 
   area.innerHTML = html;
   area.querySelectorAll('td.cell:not(.diag)').forEach(td => {
     td.addEventListener('click', () => {
       const i = Number(td.dataset.row), j = Number(td.dataset.col);
-      openMatchModal(teams[i], teams[j]);
+      if(readOnly) openMatchModalReadOnly(teams[i], teams[j], league);
+      else openMatchModal(teams[i], teams[j]);
     });
   });
 }
 
 /* ========================= 描画: 順位表 ========================= */
-function renderStandings(){
+function renderStandings(opts){
+  opts = opts || {};
+  const league = opts.league || currentLeague();
   const area = $('standingsArea');
-  const league = currentLeague();
   const teams = activeTeams(league);
   if(teams.length === 0){
     area.innerHTML = '<div class="empty-hint">参加中のチームを登録すると順位表が表示されます。</div>';
@@ -1207,11 +1311,86 @@ bindDisplayToggle('dispSetDiff', 'setDiff');
 bindDisplayToggle('dispPointDiff', 'pointDiff');
 bindDisplayToggle('dispRank', 'rank');
 
+/* ========================= 設定: データの書き出し・読み込み ========================= */
+function updateDataTab(){
+  $('dataTabLeagueName').textContent = currentLeague().name;
+}
+$('exportDataBtn').addEventListener('click', () => {
+  const league = currentLeague();
+  const payload = {
+    type: 'brick-league-export',
+    v: 1,
+    exportedAt: new Date().toISOString(),
+    name: league.name,
+    teams: league.teams,
+    matches: league.matches,
+    settings: league.settings
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const safeName = league.name.replace(/[\\/:*?"<>|]/g, '_') || 'league';
+  a.href = url;
+  a.download = 'brick-league_' + safeName + '_' + dateStr + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('書き出しました');
+});
+$('importDataBtn').addEventListener('click', () => {
+  const fileInput = $('importDataFile');
+  const file = fileInput.files && fileInput.files[0];
+  if(!file){ toast('ファイルを選択してください'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try{
+      data = JSON.parse(String(reader.result));
+    }catch(e){
+      toast('ファイルの形式が正しくありません(JSONとして読み込めませんでした)');
+      return;
+    }
+    if(!data || !Array.isArray(data.teams)){
+      toast('ファイルの形式が正しくありません(チームデータが見つかりません)');
+      return;
+    }
+    const league = currentLeague();
+    if(!confirm('「' + league.name + '」の内容を、読み込んだファイルの内容(チーム' + data.teams.length + '件)で上書きします。よろしいですか？')) return;
+    league.teams = data.teams.map(t => ({
+      id: (t && t.id) ? String(t.id) : newTeamId(league),
+      name: String((t && t.name) || 'チーム'),
+      active: !(t && t.active === false)
+    }));
+    league.matches = (data.matches && typeof data.matches === 'object') ? data.matches : {};
+    league.settings = mergeSettings(data.settings);
+    let maxN = 0;
+    league.teams.forEach(t => {
+      const m = /^T(\d+)$/.exec(t.id);
+      if(m) maxN = Math.max(maxN, Number(m[1]));
+    });
+    league.nextTeamId = maxN + 1;
+    save();
+    renderAll();
+    renderTeamList();
+    renderFormatTab();
+    renderDisplayTab();
+    updateDataTab();
+    fileInput.value = '';
+    toast('読み込みました');
+  };
+  reader.onerror = () => toast('ファイルの読み込みに失敗しました');
+  reader.readAsText(file);
+});
+
 /* ========================= 設定モーダルの開閉・タブ切替 ========================= */
 function openSettings(tabName){
   renderTeamList();
   renderFormatTab();
   renderDisplayTab();
+  updateDataTab();
   if(tabName) switchSettingsTab(tabName);
   $('settingsModal').classList.add('open');
 }
@@ -1398,8 +1577,234 @@ function saveMatchModal(){
 $('closeMatchBtn').addEventListener('click', () => $('matchModal').classList.remove('open'));
 $('matchModal').addEventListener('click', (e) => { if(e.target.id === 'matchModal') $('matchModal').classList.remove('open'); });
 
+/* ========================= 試合結果モーダル(共有ビュー用・閲覧専用) ========================= */
+function openMatchModalReadOnly(rowTeam, colTeam, league){
+  const key = pairKey(rowTeam.id, colTeam.id);
+  const canonA = key.split('__')[0];
+  const rec = league.matches[key];
+  const storedSets = (rec && rec.sets) ? rec.sets : [];
+
+  $('matchModalTitle').textContent = rowTeam.name + ' vs ' + colTeam.name;
+
+  const hasAny = storedSets.some(s => s);
+  if(!hasAny){
+    $('matchModalBody').innerHTML = '<p class="hint" style="margin-top:0;">この対戦の結果はまだ入力されていません。</p>';
+    $('matchModal').classList.add('open');
+    return;
+  }
+
+  let html = '<div class="set-team-labels">' +
+    '<div></div><div class="stl" title="' + esc(rowTeam.name) + '">' + esc(rowTeam.name) + '</div>' +
+    '<div></div><div class="stl" title="' + esc(colTeam.name) + '">' + esc(colTeam.name) + '</div>' +
+    '</div>';
+
+  storedSets.forEach((s, idx) => {
+    if(!s) return;
+    let aVal, bVal;
+    if(rowTeam.id === canonA){ aVal = s.a; bVal = s.b; }
+    else { aVal = s.b; bVal = s.a; }
+    html += '<div class="set-row">' +
+      '<div class="set-label">第' + (idx+1) + 'セット</div>' +
+      '<input type="number" value="' + esc(aVal == null ? '' : aVal) + '" disabled>' +
+      '<div class="vs">-</div>' +
+      '<input type="number" value="' + esc(bVal == null ? '' : bVal) + '" disabled>' +
+      '</div>';
+  });
+
+  $('matchModalBody').innerHTML = html;
+  $('matchModal').classList.add('open');
+}
+
+/* ========================= 結果の共有リンク =========================
+   サーバーを使わず、リーグのスナップショット(チーム・対戦結果・設定)を
+   圧縮してURLの #s=... 部分に埋め込む方式。リンクを開いた側はローカル
+   ストレージを使わず、URLに埋め込まれたデータだけで閲覧専用ビューを
+   表示できる。対応ブラウザでは CompressionStream(gzip)で圧縮し、
+   非対応ブラウザでは無圧縮のBase64にフォールバックする。
+*/
+function base64UrlEncode(binaryStr){
+  return btoa(binaryStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function base64UrlDecode(b64url){
+  let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  while(b64.length % 4) b64 += '=';
+  return atob(b64);
+}
+async function encodeShareData(payload){
+  const json = JSON.stringify(payload);
+  if(window.CompressionStream){
+    try{
+      const cs = new CompressionStream('gzip');
+      const writer = cs.writable.getWriter();
+      writer.write(new TextEncoder().encode(json));
+      writer.close();
+      const buf = await new Response(cs.readable).arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let bin = '';
+      for(let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return 'g1.' + base64UrlEncode(bin);
+    }catch(e){
+      console.error('share compress failed, falling back to uncompressed', e);
+    }
+  }
+  const utf8Bin = unescape(encodeURIComponent(json));
+  return 'r1.' + base64UrlEncode(utf8Bin);
+}
+async function decodeShareData(token){
+  const dot = token.indexOf('.');
+  if(dot === -1) throw new Error('bad share token');
+  const tag = token.slice(0, dot);
+  const bin = base64UrlDecode(token.slice(dot + 1));
+  if(tag === 'g1'){
+    if(!window.DecompressionStream) throw new Error('decompression not supported in this browser');
+    const bytes = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const ds = new DecompressionStream('gzip');
+    const writer = ds.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    const buf = await new Response(ds.readable).arrayBuffer();
+    return JSON.parse(new TextDecoder().decode(buf));
+  }
+  if(tag === 'r1'){
+    return JSON.parse(decodeURIComponent(escape(bin)));
+  }
+  throw new Error('unknown share token tag: ' + tag);
+}
+async function tryParseShareHash(){
+  const h = location.hash;
+  if(!h || h.indexOf('#s=') !== 0) return null;
+  const token = decodeURIComponent(h.slice(3));
+  try{
+    const payload = await decodeShareData(token);
+    if(!payload || typeof payload !== 'object') return 'error';
+    return payload;
+  }catch(e){
+    console.error('share hash parse failed', e);
+    return 'error';
+  }
+}
+
+$('shareLinkBtn').addEventListener('click', async () => {
+  const league = currentLeague();
+  if(activeTeams(league).length === 0){
+    toast('共有できるチームがまだ登録されていません');
+    return;
+  }
+  const payload = {
+    type: 'brick-league-share',
+    v: 1,
+    name: league.name,
+    teams: league.teams,
+    matches: league.matches,
+    settings: league.settings
+  };
+  let token;
+  try{
+    token = await encodeShareData(payload);
+  }catch(e){
+    console.error('share encode failed', e);
+    toast('共有リンクの作成に失敗しました');
+    return;
+  }
+  const url = location.origin + location.pathname + '#s=' + encodeURIComponent(token);
+  $('shareLinkOutput').value = url;
+  $('shareLinkModal').classList.add('open');
+});
+$('closeShareLinkBtn').addEventListener('click', () => $('shareLinkModal').classList.remove('open'));
+$('shareLinkModal').addEventListener('click', (e) => { if(e.target.id === 'shareLinkModal') $('shareLinkModal').classList.remove('open'); });
+$('copyShareLinkBtn').addEventListener('click', async () => {
+  const val = $('shareLinkOutput').value;
+  try{
+    await navigator.clipboard.writeText(val);
+    toast('コピーしました');
+  }catch(e){
+    try{
+      $('shareLinkOutput').select();
+      document.execCommand('copy');
+      toast('コピーしました');
+    }catch(e2){
+      toast('コピーできませんでした。URLを選択して手動でコピーしてください');
+    }
+  }
+});
+
+/* ========================= 共有ビュー(閲覧専用) ========================= */
+function renderShareView(payload){
+  const league = {
+    id: 'shared',
+    name: (payload && typeof payload.name === 'string' && payload.name.trim()) ? payload.name : 'リーグ',
+    teams: (payload && Array.isArray(payload.teams)) ? payload.teams : [],
+    matches: (payload && payload.matches && typeof payload.matches === 'object') ? payload.matches : {},
+    settings: mergeSettings(payload && payload.settings)
+  };
+
+  $('leagueSwitchBtn').style.display = 'none';
+  $('settingsBtn').style.display = 'none';
+  $('shareLinkBtn').style.display = 'none';
+  $('shareBanner').style.display = 'block';
+  $('shareBannerName').textContent = league.name;
+
+  $('shareImportBtn').addEventListener('click', () => {
+    if(!confirm('「' + league.name + '」を新しいリーグとしてこの端末に追加します。よろしいですか？')) return;
+    load();
+    const imported = makeLeague(league.name);
+    imported.id = newLeagueId();
+    imported.teams = league.teams.map(t => Object.assign({}, t));
+    imported.matches = JSON.parse(JSON.stringify(league.matches));
+    imported.settings = mergeSettings(league.settings);
+    let maxN = 0;
+    imported.teams.forEach(t => {
+      const m = /^T(\d+)$/.exec(t.id);
+      if(m) maxN = Math.max(maxN, Number(m[1]));
+    });
+    imported.nextTeamId = maxN + 1;
+
+    const onlyEmptyDefault = state.leagues.length === 1 &&
+      state.leagues[0].teams.length === 0 &&
+      Object.keys(state.leagues[0].matches).length === 0;
+    if(onlyEmptyDefault){
+      state.leagues[0] = imported;
+    } else {
+      state.leagues.push(imported);
+    }
+    state.currentLeagueId = imported.id;
+    save();
+    location.hash = '';
+    location.reload();
+  });
+  $('shareGoAppLink').addEventListener('click', () => {
+    location.href = location.origin + location.pathname;
+  });
+
+  renderMatrix({ league: league, readOnly: true });
+  renderStandings({ league: league });
+  $('versionNote').textContent = '共有リンクの閲覧ビュー(' + APP_VERSION + ')';
+}
+
+function showShareError(){
+  $('leagueSwitchBtn').style.display = 'none';
+  $('settingsBtn').style.display = 'none';
+  document.querySelector('main').innerHTML =
+    '<section class="panel"><div class="empty-hint">' +
+    '共有リンクの読み込みに失敗しました。リンクが壊れているか、お使いのブラウザが対応していない可能性があります。<br>' +
+    '<button class="primary-btn" id="shareErrorBackBtn">通常のアプリを開く</button>' +
+    '</div></section>';
+  $('shareErrorBackBtn').addEventListener('click', () => { location.href = location.origin + location.pathname; });
+  $('versionNote').textContent = APP_VERSION;
+}
+
 /* ========================= 初期化 ========================= */
-(function init(){
+(async function init(){
+  const shared = await tryParseShareHash();
+  if(shared === 'error'){
+    showShareError();
+    return;
+  }
+  if(shared){
+    renderShareView(shared);
+    return;
+  }
   load();
   $('versionNote').textContent = APP_VERSION;
   renderAll();
