@@ -6,7 +6,7 @@
 <title>BRICK リーグ戦集計</title>
 <!-- ============================================================
      BRICK リーグ戦集計ツール
-     最終更新日時: 2026-08-26 22:21 JST
+     最終更新日時: 2026-08-27 09:03 JST
      ------------------------------------------------------------
      リーグ戦(総当たり戦)の結果を入力すると、勝敗・勝ち点・得失セット差・
      得失点差・順位がリアルタイムに集計されるツール。
@@ -15,6 +15,16 @@
      配色・フォント・モーダル等のUI部品は他のBRICKツールと揃えている。
 
      2026-08-26: 初版。
+
+     2026-08-27: 複数リーグ管理機能を追加。ヘッダーのリーグ名ボタンから
+     「Aリーグ」「Bリーグ」のように複数のリーグを作成・切り替えできる
+     ようにした。リーグごとにチーム・組み合わせ表・順位表・大会設定
+     (セット数/勝ち点)・表示設定をすべて別々に保持する。
+     既存の保存データ(複数リーグ対応前)は、起動時に自動的に「リーグ1」
+     として引き継がれる。
+     あわせて、チームを登録したまま組み合わせ表・順位表からだけ除外できる
+     「参加中/除外中」切り替えを追加(削除ではないので対戦結果は消えず、
+     再度「参加中」に戻せば元通り表示される)。
      ============================================================ -->
 <style>
   :root{
@@ -48,13 +58,21 @@
   }
   header.topbar{
     display:flex;
-    align-items:center;
+    align-items:flex-start;
     justify-content:space-between;
     padding:12px 14px;
     background:var(--navy);
     position:sticky;
     top:0;
     z-index:20;
+    gap:8px;
+  }
+  .header-titles{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:6px;
+    min-width:0;
   }
   header.topbar h1{
     font-size:15px;
@@ -68,6 +86,24 @@
   header.topbar h1 .dot{
     width:8px;height:8px;border-radius:50%;background:var(--turquoise);
   }
+  .league-pill{
+    background:var(--panel2);
+    border:1px solid var(--border);
+    color:var(--turquoise);
+    font-size:11.5px;
+    font-weight:700;
+    padding:4px 10px;
+    border-radius:999px;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    max-width:260px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .league-pill .chev{font-size:9px;color:var(--sub);flex:none;}
   .iconbtn{
     background:var(--panel2);
     border:1px solid var(--border);
@@ -366,13 +402,14 @@
   .team-row{
     display:flex;
     align-items:center;
-    gap:8px;
+    gap:6px;
     background:var(--panel2);
     border:1px solid var(--border);
     border-radius:10px;
     padding:8px 10px;
     margin-bottom:8px;
   }
+  .team-row.inactive{opacity:.55;}
   .team-row .team-num{
     flex:none;
     width:24px;height:24px;
@@ -383,6 +420,7 @@
     font-weight:800;
     display:flex;align-items:center;justify-content:center;
   }
+  .team-row.inactive .team-num{color:var(--sub);}
   .team-row input[type=text]{
     flex:1;min-width:0;
     background:var(--bg);
@@ -392,6 +430,13 @@
     border-radius:7px;
     font-size:13px;
   }
+  .active-toggle-btn{
+    min-width:54px;
+    text-align:center;
+    white-space:nowrap;
+  }
+  .active-toggle-btn.is-active{color:var(--turquoise);border-color:var(--turquoise);}
+  .active-toggle-btn.is-inactive{color:var(--sub);}
   .smallbtn{
     background:var(--panel);
     border:1px solid var(--border);
@@ -403,6 +448,7 @@
     flex:none;
   }
   .smallbtn.danger{color:var(--danger);border-color:var(--danger);}
+  .smallbtn[disabled]{opacity:.4;cursor:default;}
   .addform{
     background:var(--panel2);
     border:1px dashed var(--border);
@@ -419,6 +465,40 @@
     color:var(--text);
     padding:9px 10px;
     border-radius:8px;
+    font-size:13px;
+  }
+
+  /* ---- リーグ管理 ---- */
+  .league-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:var(--panel2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:8px 10px;
+    margin-bottom:8px;
+  }
+  .league-row.current{border-color:var(--turquoise);}
+  .league-radio{
+    flex:none;
+    width:26px;height:26px;
+    border-radius:50%;
+    background:var(--navy);
+    border:1px solid var(--border);
+    color:var(--turquoise);
+    font-size:13px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .league-row.current .league-radio{border-color:var(--turquoise);}
+  .league-row input[type=text]{
+    flex:1;min-width:0;
+    background:var(--bg);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:8px 9px;
+    border-radius:7px;
     font-size:13px;
   }
 
@@ -518,7 +598,10 @@
 
 <div class="app">
   <header class="topbar">
-    <h1><span class="dot"></span>BRICK リーグ戦集計</h1>
+    <div class="header-titles">
+      <h1><span class="dot"></span>BRICK リーグ戦集計</h1>
+      <button class="league-pill" id="leagueSwitchBtn" title="リーグを切り替え"></button>
+    </div>
     <button class="iconbtn" id="settingsBtn" title="設定" aria-label="設定">⚙️</button>
   </header>
 
@@ -535,6 +618,24 @@
   </main>
 
   <p class="version-note" id="versionNote"></p>
+</div>
+
+<!-- ===================== リーグ選択モーダル ===================== -->
+<div class="modal-overlay" id="leagueModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>リーグを選択</h2>
+      <button class="iconbtn" id="closeLeagueBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="leagueListArea"></div>
+      <div class="addform" id="addLeagueForm">
+        <input type="text" id="newLeagueName" placeholder="リーグ名を入力(例: Aリーグ)" maxlength="20">
+        <button class="smallbtn" id="addLeagueBtn">＋ 追加</button>
+      </div>
+      <p class="hint">○をタップするとそのリーグに切り替わります。リーグごとにチーム・組み合わせ表・順位表・設定がすべて別々に管理されます。</p>
+    </div>
+  </div>
 </div>
 
 <!-- ===================== 設定モーダル ===================== -->
@@ -558,6 +659,7 @@
           <button class="smallbtn" id="addTeamBtn">＋ 追加</button>
         </div>
         <p class="hint" id="teamCountHint"></p>
+        <p class="hint">「参加中/除外中」ボタンで、チームを登録したまま組み合わせ表・順位表から一時的に外せます(削除ではないので対戦結果は消えません)。</p>
       </div>
 
       <div class="tab-pane" id="tab-format">
@@ -639,22 +741,51 @@
 "use strict";
 
 /* ========================= 定数 ========================= */
-const APP_VERSION = "v2026-08-26 22:21";
+const APP_VERSION = "v2026-08-27 09:03";
 const LS_KEY = "brickleague_v1";
 const MAX_TEAMS = 12;
 const MIN_TEAMS = 3;
 
-/* ========================= 状態 ========================= */
+/* ========================= 状態 =========================
+   複数のリーグ(Aリーグ/Bリーグなど)を管理できるようにするため、
+   チーム・対戦結果・設定は「リーグ」単位でひとまとまりに持つ。
+   currentLeagueId が「今表示している/操作しているリーグ」を指す。
+*/
 let state = {
-  teams: [],       // [{id,name}]
-  matches: {},      // key(=sortedId1__sortedId2) -> {sets:[{a,b}|null, ...]}
-  settings: {
+  leagues: [],        // [{id,name,teams:[{id,name,active}],matches:{},settings:{...},nextTeamId}]
+  currentLeagueId: null,
+  nextLeagueId: 1
+};
+
+function defaultSettings(){
+  return {
     maxSets: 3,
     points: { win: 2, draw: 1, loss: 0 },
     display: { winloss: true, points: true, setDiff: true, pointDiff: true, rank: true }
-  },
-  nextId: 1
-};
+  };
+}
+function makeLeague(name){
+  return { id: null, name: name, teams: [], matches: {}, settings: defaultSettings(), nextTeamId: 1 };
+}
+function newLeagueId(){
+  const id = 'L' + state.nextLeagueId;
+  state.nextLeagueId += 1;
+  return id;
+}
+function currentLeague(){
+  return state.leagues.find(l => l.id === state.currentLeagueId) || state.leagues[0];
+}
+function ensureAtLeastOneLeague(){
+  if(state.leagues.length === 0){
+    const l = makeLeague('リーグ1');
+    l.id = newLeagueId();
+    state.leagues.push(l);
+    state.currentLeagueId = l.id;
+  }
+  if(!state.leagues.find(l => l.id === state.currentLeagueId)){
+    state.currentLeagueId = state.leagues[0].id;
+  }
+}
 
 /* ========================= ユーティリティ ========================= */
 function $(id){ return document.getElementById(id); }
@@ -668,16 +799,19 @@ function toast(msg){
   clearTimeout(toast._tm);
   toast._tm = setTimeout(()=>t.classList.remove('show'), 2200);
 }
-function newTeamId(){
-  const id = 'T' + state.nextId;
-  state.nextId += 1;
+function newTeamId(league){
+  const id = 'T' + league.nextTeamId;
+  league.nextTeamId += 1;
   return id;
 }
 function pairKey(id1, id2){
   return [id1, id2].sort().join('__');
 }
-function findTeam(id){
-  return state.teams.find(t => t.id === id) || null;
+function findTeam(league, id){
+  return league.teams.find(t => t.id === id) || null;
+}
+function activeTeams(league){
+  return league.teams.filter(t => t.active !== false);
 }
 
 /* ========================= 保存/読み込み ========================= */
@@ -686,21 +820,53 @@ function save(){
     localStorage.setItem(LS_KEY, JSON.stringify(state));
   }catch(e){ console.error('save failed', e); }
 }
+function mergeSettings(s){
+  const base = defaultSettings();
+  if(!s) return base;
+  base.maxSets = s.maxSets || base.maxSets;
+  if(s.points) base.points = Object.assign({}, base.points, s.points);
+  if(s.display) base.display = Object.assign({}, base.display, s.display);
+  return base;
+}
 function load(){
   try{
     const raw = localStorage.getItem(LS_KEY);
-    if(!raw) return;
+    if(!raw){ ensureAtLeastOneLeague(); return; }
     const data = JSON.parse(raw);
-    if(Array.isArray(data.teams)) state.teams = data.teams;
-    if(data.matches && typeof data.matches === 'object') state.matches = data.matches;
-    if(data.settings){
-      state.settings.maxSets = data.settings.maxSets || state.settings.maxSets;
-      if(data.settings.points) state.settings.points = Object.assign({}, state.settings.points, data.settings.points);
-      if(data.settings.display) state.settings.display = Object.assign({}, state.settings.display, data.settings.display);
+
+    if(Array.isArray(data.leagues)){
+      // 複数リーグ対応後の形式
+      state.leagues = data.leagues.map(l => ({
+        id: l.id,
+        name: l.name || 'リーグ',
+        teams: Array.isArray(l.teams) ? l.teams : [],
+        matches: (l.matches && typeof l.matches === 'object') ? l.matches : {},
+        settings: mergeSettings(l.settings),
+        nextTeamId: typeof l.nextTeamId === 'number' ? l.nextTeamId : ((Array.isArray(l.teams) ? l.teams.length : 0) + 1)
+      }));
+      state.currentLeagueId = data.currentLeagueId || null;
+      state.nextLeagueId = typeof data.nextLeagueId === 'number' ? data.nextLeagueId : (state.leagues.length + 1);
+    } else if(Array.isArray(data.teams)){
+      // 複数リーグ対応前の保存データ: 既存の内容を「リーグ1」として引き継ぐ
+      const legacyLeague = {
+        id: 'L1',
+        name: 'リーグ1',
+        teams: data.teams,
+        matches: (data.matches && typeof data.matches === 'object') ? data.matches : {},
+        settings: mergeSettings(data.settings),
+        nextTeamId: typeof data.nextId === 'number' ? data.nextId : (data.teams.length + 1)
+      };
+      state.leagues = [legacyLeague];
+      state.currentLeagueId = 'L1';
+      state.nextLeagueId = 2;
+      ensureAtLeastOneLeague();
+      save(); // 新形式(複数リーグ対応)へその場で移行して保存しておく
+      return;
     }
-    if(typeof data.nextId === 'number') state.nextId = data.nextId;
+    ensureAtLeastOneLeague();
   }catch(e){
     console.error('load failed', e);
+    ensureAtLeastOneLeague();
   }
 }
 
@@ -723,17 +889,17 @@ function computeMatch(sets){
   return { aSets, bSets, aPts, bPts, played, partial };
 }
 
-function computeStandings(){
+function computeStandings(league){
   const stats = {};
-  state.teams.forEach(t => {
+  activeTeams(league).forEach(t => {
     stats[t.id] = { id:t.id, name:t.name, played:0, win:0, draw:0, loss:0,
       setsFor:0, setsAgainst:0, ptsFor:0, ptsAgainst:0 };
   });
-  Object.keys(state.matches).forEach(key => {
+  Object.keys(league.matches).forEach(key => {
     const parts = key.split('__');
     const idA = parts[0], idB = parts[1];
-    if(!stats[idA] || !stats[idB]) return; // 削除済みチームの残骸データは無視
-    const m = computeMatch(state.matches[key].sets);
+    if(!stats[idA] || !stats[idB]) return; // 削除済み/除外中チームが絡む対戦は無視
+    const m = computeMatch(league.matches[key].sets);
     if(m.played === 0) return;
     stats[idA].played++; stats[idB].played++;
     stats[idA].setsFor += m.aSets; stats[idA].setsAgainst += m.bSets;
@@ -744,7 +910,7 @@ function computeStandings(){
     else if(m.bSets > m.aSets){ stats[idB].win++; stats[idA].loss++; }
     else { stats[idA].draw++; stats[idB].draw++; }
   });
-  const pts = state.settings.points;
+  const pts = league.settings.points;
   const list = Object.values(stats).map(s => {
     s.leaguePoints = s.win * (pts.win||0) + s.draw * (pts.draw||0) + s.loss * (pts.loss||0);
     s.setDiff = s.setsFor - s.setsAgainst;
@@ -770,12 +936,13 @@ function computeStandings(){
 /* ========================= 描画: 組み合わせ表 ========================= */
 function renderMatrix(){
   const area = $('matrixArea');
-  const teams = state.teams;
+  const league = currentLeague();
+  const teams = activeTeams(league);
   if(teams.length < MIN_TEAMS){
     area.innerHTML =
-      '<div class="empty-hint">組み合わせ表を使うには' + MIN_TEAMS + 'チーム以上の登録が必要です。<br>' +
-      '(現在 ' + teams.length + ' チーム)<br>' +
-      '<button class="primary-btn" id="goAddTeamsBtn">チームを登録する</button></div>';
+      '<div class="empty-hint">組み合わせ表を使うには参加中のチームが' + MIN_TEAMS + 'チーム以上必要です。<br>' +
+      '(現在 参加中 ' + teams.length + ' / 登録 ' + league.teams.length + ' チーム)<br>' +
+      '<button class="primary-btn" id="goAddTeamsBtn">チームを登録・編集する</button></div>';
     const btn = $('goAddTeamsBtn');
     if(btn) btn.addEventListener('click', () => openSettings('teams'));
     return;
@@ -803,7 +970,7 @@ function renderMatrix(){
         return;
       }
       const key = pairKey(rowTeam.id, colTeam.id);
-      const rec = state.matches[key];
+      const rec = league.matches[key];
       const m = rec ? computeMatch(rec.sets) : { aSets:0, bSets:0, played:0 };
       const parts = key.split('__');
       const canonA = parts[0];
@@ -834,13 +1001,14 @@ function renderMatrix(){
 /* ========================= 描画: 順位表 ========================= */
 function renderStandings(){
   const area = $('standingsArea');
-  const teams = state.teams;
+  const league = currentLeague();
+  const teams = activeTeams(league);
   if(teams.length === 0){
-    area.innerHTML = '<div class="empty-hint">チームを登録すると順位表が表示されます。</div>';
+    area.innerHTML = '<div class="empty-hint">参加中のチームを登録すると順位表が表示されます。</div>';
     return;
   }
-  const disp = state.settings.display;
-  const list = computeStandings();
+  const disp = league.settings.display;
+  const list = computeStandings(league);
 
   let cols = [];
   if(disp.rank) cols.push('rank');
@@ -877,7 +1045,13 @@ function renderStandings(){
   area.innerHTML = html;
 }
 
+function updateLeaguePill(){
+  const league = currentLeague();
+  $('leagueSwitchBtn').innerHTML = esc(league.name) + ' <span class="chev">▾</span>';
+}
+
 function renderAll(){
+  updateLeaguePill();
   renderMatrix();
   renderStandings();
 }
@@ -885,14 +1059,21 @@ function renderAll(){
 /* ========================= 設定: チーム管理 ========================= */
 function renderTeamList(){
   const area = $('teamListArea');
-  if(state.teams.length === 0){
+  const league = currentLeague();
+  if(league.teams.length === 0){
     area.innerHTML = '<p class="hint" style="margin-top:0;">まだチームが登録されていません。</p>';
   } else {
     let html = '';
-    state.teams.forEach((t, i) => {
-      html += '<div class="team-row" data-id="' + t.id + '">' +
-        '<div class="team-num">' + (i+1) + '</div>' +
+    let activeIdx = 0;
+    league.teams.forEach((t) => {
+      const isActive = t.active !== false;
+      let numLabel;
+      if(isActive){ activeIdx++; numLabel = activeIdx; }
+      else { numLabel = '-'; }
+      html += '<div class="team-row' + (isActive ? '' : ' inactive') + '" data-id="' + t.id + '">' +
+        '<div class="team-num">' + numLabel + '</div>' +
         '<input type="text" class="team-name-input" value="' + esc(t.name) + '" maxlength="20">' +
+        '<button class="smallbtn active-toggle-btn ' + (isActive ? 'is-active' : 'is-inactive') + '" data-act="toggle">' + (isActive ? '参加中' : '除外中') + '</button>' +
         '<button class="smallbtn danger" data-act="del">削除</button>' +
         '</div>';
     });
@@ -902,7 +1083,8 @@ function renderTeamList(){
       const id = row.dataset.id;
       const input = row.querySelector('.team-name-input');
       input.addEventListener('change', () => {
-        const t = findTeam(id);
+        const league = currentLeague();
+        const t = findTeam(league, id);
         if(!t) return;
         const v = input.value.trim();
         t.name = v || t.name;
@@ -911,13 +1093,23 @@ function renderTeamList(){
         renderAll();
         renderTeamList();
       });
+      row.querySelector('[data-act="toggle"]').addEventListener('click', () => {
+        const league = currentLeague();
+        const t = findTeam(league, id);
+        if(!t) return;
+        t.active = (t.active === false) ? true : false;
+        save();
+        renderAll();
+        renderTeamList();
+      });
       row.querySelector('[data-act="del"]').addEventListener('click', () => {
-        const t = findTeam(id);
+        const league = currentLeague();
+        const t = findTeam(league, id);
         if(!t) return;
         if(!confirm(t.name + ' を削除します。このチームが関わる対戦結果も削除されます。よろしいですか？')) return;
-        state.teams = state.teams.filter(x => x.id !== id);
-        Object.keys(state.matches).forEach(key => {
-          if(key.split('__').includes(id)) delete state.matches[key];
+        league.teams = league.teams.filter(x => x.id !== id);
+        Object.keys(league.matches).forEach(key => {
+          if(key.split('__').includes(id)) delete league.matches[key];
         });
         save();
         renderAll();
@@ -931,12 +1123,16 @@ function renderTeamList(){
 
 function updateTeamCountHint(){
   const hint = $('teamCountHint');
-  hint.textContent = '登録チーム数: ' + state.teams.length + ' / ' + MAX_TEAMS +
-    (state.teams.length < MIN_TEAMS ? '(組み合わせ表の利用には' + MIN_TEAMS + 'チーム以上必要です)' : '');
+  const league = currentLeague();
+  const activeCount = activeTeams(league).length;
+  hint.textContent = '登録チーム数: ' + league.teams.length + ' / ' + MAX_TEAMS +
+    '(うち参加中 ' + activeCount + ' チーム)' +
+    (activeCount < MIN_TEAMS ? ' — 組み合わせ表の利用には参加中' + MIN_TEAMS + 'チーム以上が必要です' : '');
 }
 function updateAddFormState(){
   const form = $('addTeamForm');
-  if(state.teams.length >= MAX_TEAMS){
+  const league = currentLeague();
+  if(league.teams.length >= MAX_TEAMS){
     form.style.display = 'none';
   } else {
     form.style.display = 'flex';
@@ -945,11 +1141,12 @@ function updateAddFormState(){
 }
 
 $('addTeamBtn').addEventListener('click', () => {
+  const league = currentLeague();
   const input = $('newTeamName');
   const name = input.value.trim();
   if(!name){ toast('チーム名を入力してください'); return; }
-  if(state.teams.length >= MAX_TEAMS){ toast('登録できるのは最大' + MAX_TEAMS + 'チームまでです'); return; }
-  state.teams.push({ id: newTeamId(), name });
+  if(league.teams.length >= MAX_TEAMS){ toast('登録できるのは最大' + MAX_TEAMS + 'チームまでです'); return; }
+  league.teams.push({ id: newTeamId(league), name, active: true });
   input.value = '';
   save();
   renderAll();
@@ -961,16 +1158,17 @@ $('newTeamName').addEventListener('keydown', (e) => {
 
 /* ========================= 設定: 大会設定(セット数・勝ち点) ========================= */
 function renderFormatTab(){
+  const league = currentLeague();
   $('maxSetsSeg').querySelectorAll('button').forEach(b => {
-    b.classList.toggle('active', Number(b.dataset.v) === state.settings.maxSets);
+    b.classList.toggle('active', Number(b.dataset.v) === league.settings.maxSets);
   });
-  $('ptWin').value = state.settings.points.win;
-  $('ptDraw').value = state.settings.points.draw;
-  $('ptLoss').value = state.settings.points.loss;
+  $('ptWin').value = league.settings.points.win;
+  $('ptDraw').value = league.settings.points.draw;
+  $('ptLoss').value = league.settings.points.loss;
 }
 $('maxSetsSeg').querySelectorAll('button').forEach(b => {
   b.addEventListener('click', () => {
-    state.settings.maxSets = Number(b.dataset.v);
+    currentLeague().settings.maxSets = Number(b.dataset.v);
     save();
     renderFormatTab();
   });
@@ -978,7 +1176,7 @@ $('maxSetsSeg').querySelectorAll('button').forEach(b => {
 function bindPointsInput(id, key){
   $(id).addEventListener('input', () => {
     const v = Number($(id).value);
-    state.settings.points[key] = Number.isFinite(v) ? v : 0;
+    currentLeague().settings.points[key] = Number.isFinite(v) ? v : 0;
     save();
     renderStandings();
   });
@@ -989,15 +1187,16 @@ bindPointsInput('ptLoss', 'loss');
 
 /* ========================= 設定: 表示設定 ========================= */
 function renderDisplayTab(){
-  $('dispWinloss').checked = !!state.settings.display.winloss;
-  $('dispPoints').checked = !!state.settings.display.points;
-  $('dispSetDiff').checked = !!state.settings.display.setDiff;
-  $('dispPointDiff').checked = !!state.settings.display.pointDiff;
-  $('dispRank').checked = !!state.settings.display.rank;
+  const league = currentLeague();
+  $('dispWinloss').checked = !!league.settings.display.winloss;
+  $('dispPoints').checked = !!league.settings.display.points;
+  $('dispSetDiff').checked = !!league.settings.display.setDiff;
+  $('dispPointDiff').checked = !!league.settings.display.pointDiff;
+  $('dispRank').checked = !!league.settings.display.rank;
 }
 function bindDisplayToggle(id, key){
   $(id).addEventListener('change', () => {
-    state.settings.display[key] = $(id).checked;
+    currentLeague().settings.display[key] = $(id).checked;
     save();
     renderStandings();
   });
@@ -1027,17 +1226,96 @@ document.querySelectorAll('#settingsModal .tab').forEach(t => {
   t.addEventListener('click', () => switchSettingsTab(t.dataset.tab));
 });
 
+/* ========================= リーグ管理(複数リーグの追加・切替・削除) ========================= */
+function renderLeagueList(){
+  const area = $('leagueListArea');
+  let html = '';
+  state.leagues.forEach(l => {
+    const isCurrent = l.id === state.currentLeagueId;
+    const delDisabled = state.leagues.length <= 1;
+    html += '<div class="league-row' + (isCurrent ? ' current' : '') + '" data-id="' + l.id + '">' +
+      '<button class="league-radio" data-act="select" aria-label="このリーグに切り替え">' + (isCurrent ? '●' : '○') + '</button>' +
+      '<input type="text" class="league-name-input" value="' + esc(l.name) + '" maxlength="20">' +
+      '<button class="smallbtn danger" data-act="del"' + (delDisabled ? ' disabled title="最後の1つは削除できません"' : '') + '>削除</button>' +
+      '</div>';
+  });
+  area.innerHTML = html;
+
+  area.querySelectorAll('.league-row').forEach(row => {
+    const id = row.dataset.id;
+    row.querySelector('[data-act="select"]').addEventListener('click', () => {
+      state.currentLeagueId = id;
+      save();
+      renderAll();
+      renderLeagueList();
+      $('leagueModal').classList.remove('open');
+      toast(currentLeague().name + ' に切り替えました');
+    });
+    const nameInput = row.querySelector('.league-name-input');
+    nameInput.addEventListener('change', () => {
+      const l = state.leagues.find(x => x.id === id);
+      if(!l) return;
+      const v = nameInput.value.trim();
+      l.name = v || l.name;
+      nameInput.value = l.name;
+      save();
+      renderLeagueList();
+      updateLeaguePill();
+    });
+    const delBtn = row.querySelector('[data-act="del"]');
+    delBtn.addEventListener('click', () => {
+      if(state.leagues.length <= 1) return;
+      const l = state.leagues.find(x => x.id === id);
+      if(!l) return;
+      if(!confirm(l.name + ' を削除します。このリーグのチーム・対戦結果もすべて削除されます。よろしいですか？')) return;
+      state.leagues = state.leagues.filter(x => x.id !== id);
+      if(state.currentLeagueId === id){
+        state.currentLeagueId = state.leagues[0].id;
+      }
+      save();
+      renderAll();
+      renderLeagueList();
+    });
+  });
+}
+
+$('addLeagueBtn').addEventListener('click', () => {
+  const input = $('newLeagueName');
+  const name = input.value.trim();
+  if(!name){ toast('リーグ名を入力してください'); return; }
+  const l = makeLeague(name);
+  l.id = newLeagueId();
+  state.leagues.push(l);
+  state.currentLeagueId = l.id;
+  input.value = '';
+  save();
+  renderAll();
+  renderLeagueList();
+  toast(name + ' を追加しました');
+});
+$('newLeagueName').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); $('addLeagueBtn').click(); }
+});
+
+$('leagueSwitchBtn').addEventListener('click', () => {
+  renderLeagueList();
+  $('leagueModal').classList.add('open');
+});
+$('closeLeagueBtn').addEventListener('click', () => $('leagueModal').classList.remove('open'));
+$('leagueModal').addEventListener('click', (e) => { if(e.target.id === 'leagueModal') $('leagueModal').classList.remove('open'); });
+
 /* ========================= 試合結果入力モーダル ========================= */
-let currentMatchCtx = null; // {rowTeam, colTeam, canonA, canonB, key}
+let currentMatchCtx = null; // {rowTeam, colTeam, canonA, key}
 
 function openMatchModal(rowTeam, colTeam){
+  const league = currentLeague();
   const key = pairKey(rowTeam.id, colTeam.id);
   const canonA = key.split('__')[0];
-  const rec = state.matches[key];
+  const rec = league.matches[key];
   const storedSets = (rec && rec.sets) ? rec.sets : [];
 
   // rowTeam視点(左=rowTeam, 右=colTeam)のセット配列を作る
-  const n = Math.max(state.settings.maxSets, storedSets.length);
+  const n = Math.max(league.settings.maxSets, storedSets.length);
   const rowSets = [];
   for(let idx = 0; idx < n; idx++){
     const s = storedSets[idx];
@@ -1056,7 +1334,7 @@ function openMatchModal(rowTeam, colTeam){
     '</div>';
 
   rowSets.forEach((s, idx) => {
-    const overLimit = idx >= state.settings.maxSets;
+    const overLimit = idx >= league.settings.maxSets;
     html += '<div class="set-row" data-idx="' + idx + '">' +
       '<div class="set-label">第' + (idx+1) + 'セット' + (overLimit ? '※' : '') + '</div>' +
       '<input type="number" inputmode="numeric" min="0" step="1" class="set-a" value="' + esc(s.a) + '">' +
@@ -1064,9 +1342,9 @@ function openMatchModal(rowTeam, colTeam){
       '<input type="number" inputmode="numeric" min="0" step="1" class="set-b" value="' + esc(s.b) + '">' +
       '</div>';
   });
-  const hasOverLimit = rowSets.length > state.settings.maxSets;
+  const hasOverLimit = rowSets.length > league.settings.maxSets;
   if(hasOverLimit){
-    html += '<p class="hint">※ 現在の設定(' + state.settings.maxSets + 'セットマッチ)を超える入力済みのセットです。設定を変更するまで対象外にする場合は空欄にしてください。</p>';
+    html += '<p class="hint">※ 現在の設定(' + league.settings.maxSets + 'セットマッチ)を超える入力済みのセットです。設定を変更するまで対象外にする場合は空欄にしてください。</p>';
   }
 
   html += '<div class="match-actions">' +
@@ -1080,7 +1358,7 @@ function openMatchModal(rowTeam, colTeam){
   $('matchSaveBtn').addEventListener('click', saveMatchModal);
   $('matchClearBtn').addEventListener('click', () => {
     if(!confirm('この対戦結果をすべてクリアします。よろしいですか？')) return;
-    delete state.matches[currentMatchCtx.key];
+    delete currentLeague().matches[currentMatchCtx.key];
     save();
     renderAll();
     $('matchModal').classList.remove('open');
@@ -1091,6 +1369,7 @@ function openMatchModal(rowTeam, colTeam){
 function saveMatchModal(){
   const ctx = currentMatchCtx;
   if(!ctx) return;
+  const league = currentLeague();
   const rows = document.querySelectorAll('#matchModalBody .set-row');
   const rowSets = [];
   let partialCount = 0;
@@ -1109,7 +1388,7 @@ function saveMatchModal(){
     return { a: s.b, b: s.a };
   });
 
-  state.matches[ctx.key] = { sets: canonSets };
+  league.matches[ctx.key] = { sets: canonSets };
   save();
   renderAll();
   $('matchModal').classList.remove('open');
