@@ -6,7 +6,7 @@
 <title>BRICK リーグ戦集計</title>
 <!-- ============================================================
      BRICK リーグ戦集計ツール
-     最終更新日時: 2026-08-27 11:15 JST
+     最終更新日時: 2026-08-27 12:10 JST
      ------------------------------------------------------------
      リーグ戦(総当たり戦)の結果を入力すると、勝敗・勝ち点・得失セット差・
      得失点差・順位がリアルタイムに集計されるツール。
@@ -49,6 +49,20 @@
      勝者側の得点を太字+赤字で強調表示するようにした。共有ビューの
      閲覧専用モーダルだけでなく、通常の編集画面でも入力中にリアルタイムで
      反映される。
+
+     2026-08-27(4回目): BRICKサポーター限定のアクセスゲートを追加。
+     brick-position-toolと同じFirebase Authentication(Googleログイン)+
+     Firestore(subscriptions/{email}のstatus確認)の仕組みを、このツール
+     単体でも独立して組み込んだ。tools/一覧を経由せずこのURLに直接アクセス
+     した場合も同様にゲートがかかり、サポーター登録が確認できない場合は
+     「サポーターになる」ボタン(Stripe決済)を表示する。設定モーダルに
+     「アカウント」タブを新設し、ログイン中メールアドレス表示とログアウト
+     ボタンを設置(list.htmlのヘッダーにあるログアウト導線に相当)。
+     【重要】共有リンク(#s=...)で開かれた閲覧専用ビューは、このゲートの
+     対象外とした(スクリプト自体を読み込み時にスキップ)。共有リンクは
+     受け取った側が登録・ログインなしでそのまま結果を見られることが
+     目的のため、ここまでゲートをかけると共有機能自体が意味をなさなくなる
+     ための意図的な設計判断。
      ============================================================ -->
 <style>
   :root{
@@ -661,9 +675,111 @@
     color:var(--sub);
   }
   .set-row input[type=number]:disabled{opacity:.6;}
+
+  /* ---- アクセス制限ゲート(BRICKサポーター確認) ---- */
+  .auth-gate{
+    position:fixed;inset:0;
+    background:var(--bg);
+    z-index:1000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    overflow-y:auto;
+  }
+  .auth-gate.hidden{display:none;}
+  .gate-card{
+    width:100%;max-width:400px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:36px 28px;
+    text-align:center;
+  }
+  .gate-logo{
+    font-size:22px;font-weight:900;letter-spacing:-.02em;
+    margin-bottom:4px;
+  }
+  .gate-logo .l-b{color:#4285F4;}
+  .gate-logo .l-r{color:#EA4335;}
+  .gate-logo .l-i{color:#FBBC05;}
+  .gate-logo .l-c{color:#4285F4;}
+  .gate-logo .l-k{color:#34A853;}
+  .gate-eyebrow{
+    font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--turquoise);margin-bottom:20px;
+  }
+  .gate-title{font-size:17px;margin:0 0 10px;font-weight:700;}
+  .gate-sub{font-size:12.5px;line-height:1.7;color:var(--sub);margin-bottom:22px;}
+  .gate-google-btn{display:none;justify-content:center;margin-bottom:14px;min-height:40px;}
+  .gate-loader{display:flex;justify-content:center;gap:8px;margin:8px 0;}
+  .gate-loader span{
+    width:8px;height:8px;border-radius:50%;background:var(--turquoise);
+    animation:gateToss 1.2s ease-in-out infinite;
+  }
+  .gate-loader span:nth-child(2){animation-delay:.15s;}
+  .gate-loader span:nth-child(3){animation-delay:.3s;}
+  @keyframes gateToss{
+    0%,100%{transform:translateY(0);opacity:.5;}
+    50%{transform:translateY(-8px);opacity:1;}
+  }
+  .gate-status{min-height:18px;font-size:12px;color:var(--sub);margin:4px 0 0;}
+  .gate-status.error{color:var(--danger);}
+  .gate-result{display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+  .gate-result p{font-size:12.5px;line-height:1.7;color:var(--sub);margin-bottom:14px;}
+  .gate-pay-btn{width:100%;text-decoration:none;box-sizing:border-box;}
+  .gate-relogin{
+    display:block;width:100%;margin-top:10px;background:none;border:none;
+    color:var(--sub);text-decoration:underline;font-size:11.5px;cursor:pointer;font-family:inherit;
+  }
+  .gate-footer{margin-top:22px;font-size:10.5px;color:#5c6884;line-height:1.6;}
+  .gate-footer a{color:var(--sub);}
+  .account-email-box{
+    background:var(--panel2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px 12px;
+    font-size:12.5px;
+    color:var(--sub);
+    margin-bottom:12px;
+  }
 </style>
 </head>
 <body>
+
+<!-- BRICKサポーター限定アクセスゲート -->
+<div class="auth-gate" id="authGate">
+  <div class="gate-card">
+    <div class="gate-logo">
+      <span class="l-b">B</span><span class="l-r">R</span><span class="l-i">I</span><span class="l-c">C</span><span class="l-k">K</span>
+    </div>
+    <div class="gate-eyebrow">SUPPORTERS</div>
+    <h2 class="gate-title">BRICKサポーター確認</h2>
+    <p class="gate-sub">このツールはBRICKサポーター(月額登録)の方のみご利用いただけます。Googleアカウントでログインし、登録状況を確認してください。</p>
+
+    <div id="googleSigninBtn" class="gate-google-btn"></div>
+
+    <div class="gate-loader" id="gateLoader">
+      <span></span><span></span><span></span>
+    </div>
+    <p class="gate-status" id="gateStatus">確認しています…</p>
+
+    <div class="gate-result" id="gateInactive">
+      <p>現在、サポーター登録が確認できませんでした。BRICKサポーターになると、このツールをご利用いただけます。</p>
+      <a href="https://buy.stripe.com/5kQ14f75z1tG1Ungkt4ZG01" class="btn-full gate-pay-btn" target="_blank" rel="noopener">サポーターになる</a>
+      <button class="gate-relogin" id="gateReloginBtn">別のGoogleアカウントでログインし直す</button>
+    </div>
+
+    <p class="gate-footer">お困りの場合は <a href="mailto:brick.volley@gmail.com">brick.volley@gmail.com</a> までご連絡ください。</p>
+  </div>
+</div>
+<script>
+  // 共有リンク(#s=...)で開かれた場合は閲覧専用ビューなので、
+  // 受け取った人がログインなしでそのまま見られるようゲートを表示しない。
+  if (location.hash.indexOf('#s=') === 0) {
+    document.getElementById('authGate').classList.add('hidden');
+  }
+</script>
 
 <div class="app">
   <header class="topbar">
@@ -730,6 +846,7 @@
       <button class="tab" data-tab="format">大会設定</button>
       <button class="tab" data-tab="display">表示設定</button>
       <button class="tab" data-tab="data">データ</button>
+      <button class="tab" data-tab="account">アカウント</button>
     </div>
     <div class="modal-body">
 
@@ -812,6 +929,12 @@
         <p class="hint">読み込むと、今開いている「<span id="dataTabLeagueName"></span>」の内容が、読み込んだファイルの内容で置き換わります(元に戻せません)。別のリーグとして読み込みたい場合は、先に新しいリーグを作成してから、そのリーグを開いた状態で読み込んでください。</p>
       </div>
 
+      <div class="tab-pane" id="tab-account">
+        <div class="account-email-box" id="accountEmailBox">読み込み中…</div>
+        <button class="btn-full secondary" id="accountLogoutBtn">ログアウト</button>
+        <p class="hint">ログアウトすると、このツールはすぐに利用できなくなります。次回開いたとき、Googleログイン→サポーター登録確認から再度行ってください。</p>
+      </div>
+
     </div>
   </div>
 </div>
@@ -853,7 +976,7 @@
 "use strict";
 
 /* ========================= 定数 ========================= */
-const APP_VERSION = "v2026-08-27 11:15";
+const APP_VERSION = "v2026-08-27 12:10";
 const LS_KEY = "brickleague_v1";
 const MAX_TEAMS = 12;
 const MIN_TEAMS = 3;
@@ -1857,6 +1980,165 @@ function showShareError(){
 })();
 
 })();
+</script>
+
+<!-- ===== BRICKサポーター限定アクセスゲート(Firebase Authentication + Firestore) =====
+     tools/index.html・tools/list.html、brick-position-toolと同じFirebaseプロジェクト・
+     判定ロジック(subscriptions/{email}のstatus==='active'かつ期限内)を、このツール単体
+     でも独立して確認する。tools/一覧を経由しなくても、このURLに直接アクセスした場合も
+     同様にゲートがかかる。
+     ただし共有リンク(#s=...)で開かれた場合は閲覧専用ビューなので、このスクリプト自体を
+     まるごとスキップし、ログインなしで見られるようにしている(上のHTML側で既に
+     #authGateへhiddenを付与済み)。 -->
+<script type="module">
+  const isShareView = location.hash.indexOf('#s=') === 0;
+  if (!isShareView) {
+
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js");
+  const { getAuth, GoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+  const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js");
+
+  // ---- Firebase設定(tools/index.html・list.html・brick-position-toolと同一) ----
+  const firebaseConfig = {
+    apiKey: "AIzaSyCn0rLPeyN_hw3_lLaYw1UMAzsSK3DpxuM",
+    authDomain: "team-video-uploader-503720.firebaseapp.com",
+    projectId: "team-video-uploader-503720",
+    storageBucket: "team-video-uploader-503720.firebasestorage.app",
+    messagingSenderId: "551674365524",
+    appId: "1:551674365524:web:f67d5524bc0b3ccec70fc1",
+    measurementId: "G-S97JSJJC1N"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const gateEl = document.getElementById('authGate');
+  const googleBtnWrap = document.getElementById('googleSigninBtn');
+  const gateLoader = document.getElementById('gateLoader');
+  const gateStatus = document.getElementById('gateStatus');
+  const gateInactive = document.getElementById('gateInactive');
+  const gateReloginBtn = document.getElementById('gateReloginBtn');
+  const accountEmailBox = document.getElementById('accountEmailBox');
+  const accountLogoutBtn = document.getElementById('accountLogoutBtn');
+
+  function showLoading(msg){
+    gateStatus.textContent = msg || '確認しています…';
+    gateStatus.classList.remove('error');
+    gateLoader.style.display = 'flex';
+    googleBtnWrap.style.display = 'none';
+    gateInactive.style.display = 'none';
+  }
+  function showError(msg){
+    gateStatus.textContent = msg;
+    gateStatus.classList.add('error');
+    gateLoader.style.display = 'none';
+    googleBtnWrap.style.display = 'flex';
+    gateInactive.style.display = 'none';
+  }
+  function showLoginPrompt(){
+    gateStatus.textContent = '';
+    gateStatus.classList.remove('error');
+    gateLoader.style.display = 'none';
+    googleBtnWrap.style.display = 'flex';
+    gateInactive.style.display = 'none';
+  }
+  function showInactive(){
+    gateStatus.textContent = '';
+    gateStatus.classList.remove('error');
+    gateLoader.style.display = 'none';
+    googleBtnWrap.style.display = 'none';
+    gateInactive.style.display = 'block';
+  }
+  function unlockApp(email){
+    gateEl.classList.add('hidden');
+    if(accountEmailBox) accountEmailBox.textContent = 'ログイン中: ' + email;
+  }
+
+  // ---- Firestoreでサポーター登録状況を確認 ----
+  async function checkSubscriptionAndProceed(email){
+    try{
+      const subRef = doc(db, 'subscriptions', email);
+      const subSnap = await getDoc(subRef);
+
+      if (subSnap.exists()){
+        const data = subSnap.data();
+        const isActive = data.status === 'active';
+        const notExpired = !data.currentPeriodEnd || (new Date(data.currentPeriodEnd.toDate ? data.currentPeriodEnd.toDate() : data.currentPeriodEnd) > new Date());
+        if (isActive && notExpired){
+          unlockApp(email);
+          return;
+        }
+      }
+      showInactive();
+    }catch(err){
+      console.error('[BRICK DEBUG] サポーター確認エラー:', err);
+      showError('確認中にエラーが発生しました。時間をおいて再度お試しください。');
+    }
+  }
+
+  // ---- Googleログイン成功時のコールバック ----
+  window.handleGoogleSignIn = async function(response){
+    try{
+      showLoading('ログインしています…');
+      const credential = GoogleAuthProvider.credential(response.credential);
+      const userCred = await signInWithCredential(auth, credential);
+      const email = userCred.user.email;
+      showLoading('サポーター登録状況を確認しています…');
+      await checkSubscriptionAndProceed(email);
+    }catch(err){
+      console.error('[BRICK DEBUG] ログインエラー:', err);
+      showError('ログインでエラーが発生しました。時間をおいて再度お試しください。');
+    }
+  };
+
+  // ---- 再訪問時、既にログイン済みなら自動で確認(Firebase Authは既定でログイン状態を保持) ----
+  onAuthStateChanged(auth, async (user) => {
+    if (!user || !user.email){
+      showLoginPrompt();
+      return;
+    }
+    showLoading('サポーター登録状況を確認しています…');
+    await checkSubscriptionAndProceed(user.email);
+  });
+
+  gateReloginBtn.addEventListener('click', async () => {
+    try{ await signOut(auth); }catch(e){}
+    showLoginPrompt();
+  });
+
+  if (accountLogoutBtn){
+    accountLogoutBtn.addEventListener('click', async () => {
+      try{ await signOut(auth); }catch(e){}
+      window.location.reload();
+    });
+  }
+
+  }
+</script>
+
+<!-- Google Identity Services: 共有ビューではスクリプトの読み込み自体を行わない
+     (受け取った人の端末からaccounts.google.comへ余計な通信を発生させないため) -->
+<script>
+  (function(){
+    if (location.hash.indexOf('#s=') === 0) return; // 共有ビューでは何もしない
+    var s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = function(){
+      if (typeof google === 'undefined' || !google.accounts) return;
+      google.accounts.id.initialize({
+        client_id: "551674365524-1qjh7ij42vd933gdns994gqckuglcmqb.apps.googleusercontent.com",
+        callback: handleGoogleSignIn
+      });
+      google.accounts.id.renderButton(
+        document.getElementById('googleSigninBtn'),
+        { theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', width: 260 }
+      );
+    };
+    document.head.appendChild(s);
+  })();
 </script>
 </body>
 </html>
