@@ -6,7 +6,7 @@
 <title>BRICK リーグ戦集計</title>
 <!-- ============================================================
      BRICK リーグ戦集計ツール
-     最終更新日時: 2026-08-27 10:30 JST
+     最終更新日時: 2026-08-27 11:15 JST
      ------------------------------------------------------------
      リーグ戦(総当たり戦)の結果を入力すると、勝敗・勝ち点・得失セット差・
      得失点差・順位がリアルタイムに集計されるツール。
@@ -39,6 +39,16 @@
      必要がある(自動更新はされない)。共有ビューには「自分のアプリに
      取り込む」ボタンもあり、受け取った側が自分の端末に新しいリーグとして
      取り込むこともできる。
+
+     2026-08-27(3回目): 共有(閲覧専用)ビューの見え方を2点改善。
+     ①組み合わせ表のマス目の数字を、共有ビューでは「得失セット数」では
+     なく「合計得点(得失点)」で表示するようにした(例: 1セットマッチの
+     大会だとセット数だけでは1-0にしかならず情報量が少ないため)。
+     通常の編集画面(自分でスコアを入力する画面)は従来どおりセット数表示。
+     ②対戦結果入力モーダル(セットごとの得点の一覧)で、各セットの
+     勝者側の得点を太字+赤字で強調表示するようにした。共有ビューの
+     閲覧専用モーダルだけでなく、通常の編集画面でも入力中にリアルタイムで
+     反映される。
      ============================================================ -->
 <style>
   :root{
@@ -536,6 +546,14 @@
     font-size:15px;
     text-align:center;
   }
+  .set-row input[type=number].set-winner{
+    color:var(--danger);
+    font-weight:800;
+  }
+  .set-row input[type=number]:disabled.set-winner{
+    opacity:1;
+    color:var(--danger);
+  }
   .set-team-labels{
     display:grid;
     grid-template-columns:56px 1fr 20px 1fr;
@@ -835,7 +853,7 @@
 "use strict";
 
 /* ========================= 定数 ========================= */
-const APP_VERSION = "v2026-08-27 10:30";
+const APP_VERSION = "v2026-08-27 11:15";
 const LS_KEY = "brickleague_v1";
 const MAX_TEAMS = 12;
 const MIN_TEAMS = 3;
@@ -1071,15 +1089,17 @@ function renderMatrix(opts){
       }
       const key = pairKey(rowTeam.id, colTeam.id);
       const rec = league.matches[key];
-      const m = rec ? computeMatch(rec.sets) : { aSets:0, bSets:0, played:0 };
+      const m = rec ? computeMatch(rec.sets) : { aSets:0, bSets:0, aPts:0, bPts:0, played:0 };
       const parts = key.split('__');
       const canonA = parts[0];
       // rowTeamがcanonicalなteamAかどうかで表示順を決める(常に row-col の順で表示)
-      let rowSets, colSets;
-      if(rowTeam.id === canonA){ rowSets = m.aSets; colSets = m.bSets; }
-      else { rowSets = m.bSets; colSets = m.aSets; }
+      let rowSets, colSets, rowPts, colPts;
+      if(rowTeam.id === canonA){ rowSets = m.aSets; colSets = m.bSets; rowPts = m.aPts; colPts = m.bPts; }
+      else { rowSets = m.bSets; colSets = m.aSets; rowPts = m.bPts; colPts = m.aPts; }
       if(m.played > 0){
-        html += '<td class="cell" data-row="' + i + '" data-col="' + j + '">' + rowSets + '-' + colSets + '</td>';
+        // 共有(閲覧専用)ビューでは得失セットではなく合計得点(得失点)で表示する
+        const label = readOnly ? (rowPts + '-' + colPts) : (rowSets + '-' + colSets);
+        html += '<td class="cell" data-row="' + i + '" data-col="' + j + '">' + label + '</td>';
       } else {
         html += '<td class="cell empty" data-row="' + i + '" data-col="' + j + '">-</td>';
       }
@@ -1088,7 +1108,7 @@ function renderMatrix(opts){
   });
   html += '</tbody></table></div>';
   html += readOnly
-    ? '<p class="hint">セルをタップすると、その対戦のセットごとの得点を確認できます。</p>'
+    ? '<p class="hint">セルの数字は合計得点(自チームの得点-相手の得点)です。タップすると、セットごとの得点を確認できます。</p>'
     : '<p class="hint">セルをタップすると、そのマスの行×列の対戦結果を入力できます。</p>';
 
   area.innerHTML = html;
@@ -1486,6 +1506,16 @@ $('leagueModal').addEventListener('click', (e) => { if(e.target.id === 'leagueMo
 /* ========================= 試合結果入力モーダル ========================= */
 let currentMatchCtx = null; // {rowTeam, colTeam, canonA, key}
 
+// そのセットで、左(a)側・右(b)側のどちらが勝っているかを判定する('a'|'b'|null)
+function setWinnerSide(aVal, bVal){
+  const aNum = (aVal === '' || aVal === null || aVal === undefined) ? null : Number(aVal);
+  const bNum = (bVal === '' || bVal === null || bVal === undefined) ? null : Number(bVal);
+  if(aNum === null || bNum === null || !Number.isFinite(aNum) || !Number.isFinite(bNum)) return null;
+  if(aNum > bNum) return 'a';
+  if(bNum > aNum) return 'b';
+  return null;
+}
+
 function openMatchModal(rowTeam, colTeam){
   const league = currentLeague();
   const key = pairKey(rowTeam.id, colTeam.id);
@@ -1533,6 +1563,21 @@ function openMatchModal(rowTeam, colTeam){
 
   $('matchModalBody').innerHTML = html;
   $('matchModal').classList.add('open');
+
+  // 勝っている側の得点を太字+赤字で強調する(初期表示 + 入力中もリアルタイムに更新)
+  $('matchModalBody').querySelectorAll('.set-row').forEach(row => {
+    const aInput = row.querySelector('.set-a');
+    const bInput = row.querySelector('.set-b');
+    if(!aInput || !bInput) return;
+    const updateWinner = () => {
+      const side = setWinnerSide(aInput.value.trim(), bInput.value.trim());
+      aInput.classList.toggle('set-winner', side === 'a');
+      bInput.classList.toggle('set-winner', side === 'b');
+    };
+    aInput.addEventListener('input', updateWinner);
+    bInput.addEventListener('input', updateWinner);
+    updateWinner();
+  });
 
   $('matchSaveBtn').addEventListener('click', saveMatchModal);
   $('matchClearBtn').addEventListener('click', () => {
@@ -1603,11 +1648,12 @@ function openMatchModalReadOnly(rowTeam, colTeam, league){
     let aVal, bVal;
     if(rowTeam.id === canonA){ aVal = s.a; bVal = s.b; }
     else { aVal = s.b; bVal = s.a; }
+    const winSide = setWinnerSide(aVal, bVal);
     html += '<div class="set-row">' +
       '<div class="set-label">第' + (idx+1) + 'セット</div>' +
-      '<input type="number" value="' + esc(aVal == null ? '' : aVal) + '" disabled>' +
+      '<input type="number" value="' + esc(aVal == null ? '' : aVal) + '" disabled' + (winSide === 'a' ? ' class="set-winner"' : '') + '>' +
       '<div class="vs">-</div>' +
-      '<input type="number" value="' + esc(bVal == null ? '' : bVal) + '" disabled>' +
+      '<input type="number" value="' + esc(bVal == null ? '' : bVal) + '" disabled' + (winSide === 'b' ? ' class="set-winner"' : '') + '>' +
       '</div>';
   });
 
