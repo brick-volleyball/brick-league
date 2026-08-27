@@ -6,7 +6,7 @@
 <title>BRICK リーグ戦集計</title>
 <!-- ============================================================
      BRICK リーグ戦集計ツール
-     最終更新日時: 2026-08-27 12:10 JST
+     最終更新日時: 2026-08-27 13:00 JST
      ------------------------------------------------------------
      リーグ戦(総当たり戦)の結果を入力すると、勝敗・勝ち点・得失セット差・
      得失点差・順位がリアルタイムに集計されるツール。
@@ -63,7 +63,10 @@
      受け取った側が登録・ログインなしでそのまま結果を見られることが
      目的のため、ここまでゲートをかけると共有機能自体が意味をなさなくなる
      ための意図的な設計判断。
-     ============================================================ -->
+     ============================================================ 
+     2026-08-27(5回目): 未登録者向けの「サポーターになる」ボタンの下に、
+     「特定商取引法に基づく表記」ページへのリンクを追加。
+-->
 <style>
   :root{
     --navy:#182338;
@@ -734,6 +737,9 @@
   }
   .gate-footer{margin-top:22px;font-size:10.5px;color:#5c6884;line-height:1.6;}
   .gate-footer a{color:var(--sub);}
+  .gate-tokushoho-link{margin-top:12px;text-align:center;}
+  .gate-tokushoho-link a{font-size:10.5px;color:#5c6884;text-decoration:underline;}
+  .gate-tokushoho-link a:hover{color:var(--sub);}
   .account-email-box{
     background:var(--panel2);
     border:1px solid var(--border);
@@ -767,6 +773,7 @@
     <div class="gate-result" id="gateInactive">
       <p>現在、サポーター登録が確認できませんでした。BRICKサポーターになると、このツールをご利用いただけます。</p>
       <a href="https://buy.stripe.com/5kQ14f75z1tG1Ungkt4ZG01" class="btn-full gate-pay-btn" target="_blank" rel="noopener">サポーターになる</a>
+      <p class="gate-tokushoho-link"><a href="https://brick-volleyball.github.io/tools/tokushoho.html" target="_blank" rel="noopener">特定商取引法に基づく表記</a></p>
       <button class="gate-relogin" id="gateReloginBtn">別のGoogleアカウントでログインし直す</button>
     </div>
 
@@ -976,7 +983,7 @@
 "use strict";
 
 /* ========================= 定数 ========================= */
-const APP_VERSION = "v2026-08-27 12:10";
+const APP_VERSION = "v2026-08-27 13:00";
 const LS_KEY = "brickleague_v1";
 const MAX_TEAMS = 12;
 const MIN_TEAMS = 3;
